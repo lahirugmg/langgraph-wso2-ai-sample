@@ -1,23 +1,20 @@
 # langgraph-wso2-ai-sample
 
-Minimal workspace with a single LangGraph example placed under `agent/`.
+Minimal workspace containing a LangGraph sample agent and a clinical trial REST backend.
 
 ## Prerequisites
-- Python 3.10 or newer
-- `pip install langgraph`
+- Python 3.10 or newer (virtual environments recommended)
 
-## Run the sample
-1. Change into this directory.
-2. Execute `python agent/simple_langgraph.py`.
-3. You should see the counter output for each graph step until it reaches three.
+## Run the LangGraph agent
+1. Install LangGraph: `pip install langgraph`
+2. From the repo root, execute: `python agent/simple_langgraph.py`
+3. Watch the console output as the counter advances to three.
 
 Feel free to modify the state or the transition logic inside `agent/simple_langgraph.py` to experiment with LangGraph flows.
 
-## Clinical Research Services API
-A small FastAPI service lives in `backend/` and exposes REST endpoints for managing clinical trials.
+## Run the Clinical Research Services API
+1. Install backend dependencies: `pip install -r backend/requirements.txt`
+2. Start the FastAPI server: `uvicorn backend.app:app --reload`
+3. Visit `http://127.0.0.1:8000/docs` to explore the interactive API documentation.
 
-- Install requirements: `pip install -r backend/requirements.txt`
-- Start the server: `uvicorn backend.app:app --reload`
-- Explore the docs: `http://127.0.0.1:8000/docs`
-
-Endpoints include a `GET /services` overview plus CRUD-style trial operations (`GET /trials`, `GET /trials/{id}`, `POST /trials`). See `backend/README.md` for details.
+The API offers a `GET /services` overview plus trial endpoints (`GET /trials`, `GET /trials/{id}`, `POST /trials`). See `backend/README.md` for more details.
