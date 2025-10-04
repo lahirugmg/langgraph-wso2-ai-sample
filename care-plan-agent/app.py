@@ -83,9 +83,13 @@ def _get_access_token() -> Optional[str]:
     # Check if cached token is still valid (with 60 second buffer)
     import time
     if _access_token_cache["token"] and _access_token_cache["expires_at"] > time.time() + 60:
+        logger.info("Using cached access token (valid for %d more seconds)", 
+                   int(_access_token_cache["expires_at"] - time.time()))
         return _access_token_cache["token"]
     
-    logger.info("Requesting new access token from API Manager")
+    logger.info("Requesting new access token from API Manager endpoint: %s", API_MANAGER_TOKEN_ENDPOINT)
+    logger.info("Using client_id: %s", API_MANAGER_CLIENT_ID[:10] + "..." if len(API_MANAGER_CLIENT_ID) > 10 else API_MANAGER_CLIENT_ID)
+    
     try:
         response = requests.post(
             API_MANAGER_TOKEN_ENDPOINT,
@@ -97,6 +101,9 @@ def _get_access_token() -> Optional[str]:
             headers={"Content-Type": "application/x-www-form-urlencoded"},
             timeout=10,
         )
+        
+        logger.info("Token endpoint responded with status: %d", response.status_code)
+        
         response.raise_for_status()
         token_data = response.json()
         access_token = token_data["access_token"]
@@ -106,10 +113,11 @@ def _get_access_token() -> Optional[str]:
         _access_token_cache["token"] = access_token
         _access_token_cache["expires_at"] = time.time() + expires_in
         
-        logger.info("Access token obtained successfully (expires in %d seconds)", expires_in)
+        logger.info("✓ Access token obtained successfully (expires in %d seconds)", expires_in)
+        logger.info("✓ Token cached for future requests")
         return access_token
     except (requests.RequestException, KeyError, ValueError) as exc:
-        logger.exception("Failed to obtain access token: %s", exc)
+        logger.exception("✗ Failed to obtain access token: %s", exc)
         return None
 
 
@@ -120,12 +128,16 @@ def _call_llm(messages: List[dict[str, str]]) -> Optional[str]:
 
     access_token = _get_access_token()
     if not access_token:
-        logger.error("Failed to obtain access token; skipping LLM plan drafting")
+        logger.error("✗ Failed to obtain access token; skipping LLM plan drafting")
         return None
 
-    logger.info("Calling LLM model=%s for plan drafting via API Manager", OPENAI_MODEL)
+    logger.info("Calling LLM API via API Manager proxy")
+    logger.info("  Endpoint: %s", API_MANAGER_CHAT_ENDPOINT)
+    logger.info("  Model: %s", OPENAI_MODEL)
+    logger.info("  Messages: %d", len(messages))
+    
     headers = {
-        "Authorization": f"Bearer {access_token}",
+        "Authorization": f"Bearer {access_token[:20]}..." if len(access_token) > 20 else "Bearer ***",
         "Content-Type": "application/json",
     }
     payload = {
@@ -136,19 +148,34 @@ def _call_llm(messages: List[dict[str, str]]) -> Optional[str]:
     }
 
     try:
+        logger.info("Sending request to LLM API...")
         response = requests.post(
             API_MANAGER_CHAT_ENDPOINT,
-            headers=headers,
+            headers={
+                "Authorization": f"Bearer {access_token}",
+                "Content-Type": "application/json",
+            },
             json=payload,
             timeout=45,
         )
+        
+        logger.info("LLM API responded with status: %d", response.status_code)
+        
         response.raise_for_status()
         data = response.json()
         content = data["choices"][0]["message"]["content"]
-        logger.info("LLM response received (%d chars)", len(content))
+        
+        logger.info("✓ LLM response received successfully (%d chars)", len(content))
+        logger.info("✓ LLM plan generation completed")
         return content
+    except requests.HTTPError as exc:
+        logger.error("✗ LLM API HTTP error: status=%d, response=%s", 
+                    response.status_code, 
+                    response.text[:200] if response.text else "empty")
+        logger.exception("✗ LLM call failed: %s", exc)
+        return None
     except (requests.RequestException, KeyError, IndexError, ValueError) as exc:
-        logger.exception("LLM call failed: %s", exc)
+        logger.exception("✗ LLM call failed: %s", exc)
         return None
 
 
