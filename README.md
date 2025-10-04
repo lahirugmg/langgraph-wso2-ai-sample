@@ -7,16 +7,18 @@ Minimal workspace containing LangGraph agents plus REST backends for clinical re
 
 ## Services & Agents
 ### Trial Registry Service
-1. `pip install -r trial-registry-backend/requirements.txt`
-2. `uvicorn app:app --app-dir trial-registry-backend --reload --port 8002`
-3. Swagger UI: <http://127.0.0.1:8002/docs>
+1. `cp trial-registry-backend/.env.example trial-registry-backend/.env`
+2. `pip install -r trial-registry-backend/requirements.txt`
+3. `uvicorn app:app --app-dir trial-registry-backend --reload --port 8002`
+4. Swagger UI: <http://127.0.0.1:8002/docs>
 
 Endpoints cover `GET /trials`, `POST /trials`, and return structured metadata (NCT id, distance, eligibility summary) for the Evidence Agent.
 
 ### EHR Service
-1. `pip install -r ehr-backend/requirements.txt`
-2. `uvicorn app:app --app-dir ehr-backend --reload --port 8001`
-3. Swagger UI: <http://127.0.0.1:8001/docs>
+1. `cp ehr-backend/.env.example ehr-backend/.env`
+2. `pip install -r ehr-backend/requirements.txt`
+3. `uvicorn app:app --app-dir ehr-backend --reload --port 8001`
+4. Swagger UI: <http://127.0.0.1:8001/docs>
 
 Key routes:
 - `GET /patients/{id}/summary`
@@ -24,14 +26,16 @@ Key routes:
 - `POST /orders/medication`
 
 ### Evidence Agent
-1. `pip install -r evidence-agent/requirements.txt`
-2. `uvicorn evidence_agent:app --app-dir evidence-agent --reload --port 8003`
+1. `cp evidence-agent/.env.example evidence-agent/.env`
+2. `pip install -r evidence-agent/requirements.txt`
+3. `uvicorn evidence_agent:app --app-dir evidence-agent --reload --port 8003`
 
 `POST /agents/evidence/search` accepts `{age, diagnosis, egfr, comorbidities, geo}` and returns an `evidence_pack` with ranked trial matches, PICO-style grading, and risk/benefit notes. The agent uses LangGraph to fetch the Trial Registry service and perform the synthetic analysis step.
 
 ### Care-Plan Agent
-1. `pip install -r care-plan-agent/requirements.txt`
-2. `uvicorn app:app --app-dir care-plan-agent --reload --port 8004`
+1. `cp care-plan-agent/.env.example care-plan-agent/.env`
+2. `pip install -r care-plan-agent/requirements.txt`
+3. `uvicorn app:app --app-dir care-plan-agent --reload --port 8004`
 
 `POST /agents/care-plan/recommendation` orchestrates the workflow:
 1. `GET /patients/{id}/summary` from the EHR service.
@@ -49,9 +53,10 @@ Example request:
 
 ### Frontend (Doctor UI)
 1. `cd frontend && cp .env.local.example .env.local`
-2. Update URLs/tokens in `.env.local` as needed (e.g., `CARE_PLAN_URL`, `EHR_URL`).
-3. `npm install`
-4. `npm run dev` (Next.js on <http://127.0.0.1:8080>)
+2. (Optional) `cp .env.example .env` for shared tooling or deployment.
+3. Update URLs/tokens in the env files as needed (e.g., `CARE_PLAN_URL`, `EHR_URL`, `OPENAI_API_KEY`).
+4. `npm install`
+5. `npm run dev` (Next.js on <http://127.0.0.1:8080>)
 
 The portal calls the Care-Plan Agent via `/api/care-plan`, fetches labs through `/api/labs`, and offers an evidence preview tab backed by `/api/evidence`.
 

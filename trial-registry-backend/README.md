@@ -4,7 +4,8 @@ FastAPI service that stores mock clinical trials and exposes metadata for the Ev
 
 ## Setup
 1. Create/activate a Python 3.10+ virtual environment.
-2. Install dependencies: `pip install -r trial-registry-backend/requirements.txt`.
+2. `cp trial-registry-backend/.env.example trial-registry-backend/.env` and adjust values as needed.
+3. Install dependencies: `pip install -r trial-registry-backend/requirements.txt`.
 
 ## Run
 ```bash

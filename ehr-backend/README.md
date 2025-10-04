@@ -5,7 +5,8 @@ Demo FastAPI backend that mocks a minimal electronic health record (EHR) API and
 ## Setup
 1. Ensure Python 3.10+ is available.
 2. (Optional) Create a virtual environment.
-3. From the repository root run `pip install -r ehr-backend/requirements.txt`.
+3. `cp ehr-backend/.env.example ehr-backend/.env` and tweak origins/titles as needed.
+4. From the repository root run `pip install -r ehr-backend/requirements.txt`.
 
 ## Run
 ```bash

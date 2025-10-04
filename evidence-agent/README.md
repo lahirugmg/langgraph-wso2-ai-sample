@@ -4,7 +4,8 @@ LangGraph-based helper that queries the Trial Registry service, performs a light
 
 ## Setup
 1. Install Python 3.10+.
-2. `pip install -r evidence-agent/requirements.txt`
+2. `cp evidence-agent/.env.example evidence-agent/.env` and adjust values as needed.
+3. `pip install -r evidence-agent/requirements.txt`
 
 ## Run
 ```bash

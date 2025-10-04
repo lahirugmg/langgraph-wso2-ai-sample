@@ -4,7 +4,8 @@ LangGraph-powered orchestrator that pulls context from the EHR service, asks the
 
 ## Setup
 1. Install Python 3.10+.
-2. `pip install -r care-plan-agent/requirements.txt`
+2. `cp care-plan-agent/.env.example care-plan-agent/.env` and adjust values as needed.
+3. `pip install -r care-plan-agent/requirements.txt`
 
 ## Run
 ```bash
