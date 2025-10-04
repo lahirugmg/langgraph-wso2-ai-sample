@@ -34,8 +34,22 @@ logger.setLevel(logging.INFO)
 
 TRIAL_REGISTRY_URL = os.environ.get("TRIAL_REGISTRY_URL", "http://127.0.0.1:8002")
 OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
-OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
-OPENAI_BASE_URL = os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1")
+
+# API Manager OAuth2 configuration
+API_MANAGER_BASE_URL = os.environ.get("API_MANAGER_BASE_URL")
+API_MANAGER_CLIENT_ID = os.environ.get("API_MANAGER_CLIENT_ID")
+API_MANAGER_CLIENT_SECRET = os.environ.get("API_MANAGER_CLIENT_SECRET")
+API_MANAGER_TOKEN_ENDPOINT = os.environ.get(
+    "API_MANAGER_TOKEN_ENDPOINT",
+    f"{API_MANAGER_BASE_URL}/oauth2/token" if API_MANAGER_BASE_URL else None
+)
+API_MANAGER_CHAT_ENDPOINT = os.environ.get(
+    "API_MANAGER_CHAT_ENDPOINT",
+    f"{API_MANAGER_BASE_URL}/healthcare/openai-api/v1.0/chat/completions" if API_MANAGER_BASE_URL else None
+)
+
+# Cache for access token
+_access_token_cache = {"token": None, "expires_at": 0}
 
 
 class GeoContext(TypedDict):
@@ -90,6 +104,45 @@ class EvidenceState(TypedDict, total=False):
     llm_notes: Optional[str]
 
 
+def _get_access_token() -> Optional[str]:
+    """Obtain OAuth2 access token using client credentials flow."""
+    if not all([API_MANAGER_CLIENT_ID, API_MANAGER_CLIENT_SECRET, API_MANAGER_TOKEN_ENDPOINT]):
+        logger.info("API Manager credentials not configured; skipping authentication")
+        return None
+    
+    # Check if cached token is still valid (with 60 second buffer)
+    import time
+    if _access_token_cache["token"] and _access_token_cache["expires_at"] > time.time() + 60:
+        return _access_token_cache["token"]
+    
+    logger.info("Requesting new access token from API Manager")
+    try:
+        response = requests.post(
+            API_MANAGER_TOKEN_ENDPOINT,
+            data={
+                "grant_type": "client_credentials",
+                "client_id": API_MANAGER_CLIENT_ID,
+                "client_secret": API_MANAGER_CLIENT_SECRET,
+            },
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+            timeout=10,
+        )
+        response.raise_for_status()
+        token_data = response.json()
+        access_token = token_data["access_token"]
+        expires_in = token_data.get("expires_in", 3600)
+        
+        # Cache the token
+        _access_token_cache["token"] = access_token
+        _access_token_cache["expires_at"] = time.time() + expires_in
+        
+        logger.info("Access token obtained successfully (expires in %d seconds)", expires_in)
+        return access_token
+    except (requests.RequestException, KeyError, ValueError) as exc:
+        logger.exception("Failed to obtain access token: %s", exc)
+        return None
+
+
 def _call_llm(messages: List[dict[str, str]]) -> Optional[str]:
     """Call a chat-completions style LLM endpoint if credentials exist.
 
@@ -97,13 +150,18 @@ def _call_llm(messages: List[dict[str, str]]) -> Optional[str]:
     can gracefully fall back to heuristic behaviour.
     """
 
-    if not OPENAI_API_KEY:
-        logger.info("OPENAI_API_KEY not set; skipping trial grading LLM call")
+    if not API_MANAGER_CHAT_ENDPOINT:
+        logger.info("API Manager not configured; skipping trial grading LLM call")
         return None
 
-    logger.info("Calling LLM model=%s to grade %d trials", OPENAI_MODEL, len(messages) - 1)
+    access_token = _get_access_token()
+    if not access_token:
+        logger.error("Failed to obtain access token; skipping trial grading LLM call")
+        return None
+
+    logger.info("Calling LLM model=%s to grade %d trials via API Manager", OPENAI_MODEL, len(messages) - 1)
     headers = {
-        "Authorization": f"Bearer {OPENAI_API_KEY}",
+        "Authorization": f"Bearer {access_token}",
         "Content-Type": "application/json",
     }
     payload = {
@@ -115,7 +173,7 @@ def _call_llm(messages: List[dict[str, str]]) -> Optional[str]:
 
     try:
         response = requests.post(
-            f"{OPENAI_BASE_URL.rstrip('/')}/chat/completions",
+            API_MANAGER_CHAT_ENDPOINT,
             headers=headers,
             json=payload,
             timeout=30,
@@ -322,7 +380,7 @@ def analyze_evidence(state: EvidenceState) -> EvidenceState:
         trials=trials,
         generated_at=datetime.utcnow().isoformat() + "Z",
     )
-    if OPENAI_API_KEY and state.get("analyses"):
+    if API_MANAGER_CHAT_ENDPOINT and state.get("analyses"):
         evidence_pack["llm_model"] = OPENAI_MODEL
     if state.get("llm_notes"):
         evidence_pack["notes"] = str(state["llm_notes"])
