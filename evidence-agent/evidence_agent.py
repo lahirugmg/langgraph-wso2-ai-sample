@@ -6,8 +6,8 @@ services (e.g., care-plan agent) can consume.
 """
 from __future__ import annotations
 
-import os
 import json
+import logging
 import os
 import re
 from datetime import datetime
@@ -21,6 +21,16 @@ from langgraph.graph import END, StateGraph
 from pydantic import BaseModel, Field
 
 load_dotenv()
+
+logger = logging.getLogger("evidence_agent")
+if not logger.handlers:
+    handler = logging.StreamHandler()
+    formatter = logging.Formatter(
+        "%(asctime)s [%(levelname)s] evidence-agent: %(message)s"
+    )
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
+logger.setLevel(logging.INFO)
 
 TRIAL_REGISTRY_URL = os.environ.get("TRIAL_REGISTRY_URL", "http://127.0.0.1:8002")
 OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
@@ -88,8 +98,10 @@ def _call_llm(messages: List[dict[str, str]]) -> Optional[str]:
     """
 
     if not OPENAI_API_KEY:
+        logger.info("OPENAI_API_KEY not set; skipping trial grading LLM call")
         return None
 
+    logger.info("Calling LLM model=%s to grade %d trials", OPENAI_MODEL, len(messages) - 1)
     headers = {
         "Authorization": f"Bearer {OPENAI_API_KEY}",
         "Content-Type": "application/json",
@@ -110,8 +122,11 @@ def _call_llm(messages: List[dict[str, str]]) -> Optional[str]:
         )
         response.raise_for_status()
         data = response.json()
-        return data["choices"][0]["message"]["content"]
-    except (requests.RequestException, KeyError, IndexError, ValueError):
+        content = data["choices"][0]["message"]["content"]
+        logger.info("LLM evidence grading response received (%d chars)", len(content))
+        return content
+    except (requests.RequestException, KeyError, IndexError, ValueError) as exc:
+        logger.exception("LLM evidence grading failed: %s", exc)
         return None
 
 
@@ -131,6 +146,12 @@ def _extract_json_block(text: str) -> Optional[dict[str, Any]]:
 
 def fetch_trials(state: EvidenceState) -> EvidenceState:
     context = state["context"]
+    logger.info(
+        "Fetching trials for diagnosis=%s egfr=%.1f (radius=%s)",
+        context["diagnosis"],
+        context["egfr"],
+        context.get("geo", {}).get("radius_km"),
+    )
     try:
         response = requests.get(f"{TRIAL_REGISTRY_URL.rstrip('/')}/trials", timeout=5)
         response.raise_for_status()
@@ -177,6 +198,7 @@ def fetch_trials(state: EvidenceState) -> EvidenceState:
         )
 
     scored.sort(key=lambda item: item["suitability"], reverse=True)
+    logger.info("Scored %d trials; returning top %d", len(scored), len(scored[:3]))
     return {"trial_matches": scored[:3]}
 
 
@@ -216,6 +238,7 @@ def llm_grade_trials(state: EvidenceState) -> EvidenceState:
         return {}
 
     context = state["context"]
+    logger.info("Preparing LLM grading payload for %d trials", len(trials))
     messages = [
         {
             "role": "system",
@@ -240,9 +263,11 @@ def llm_grade_trials(state: EvidenceState) -> EvidenceState:
 
     raw = _call_llm(messages)
     if not raw:
+        logger.info("LLM grading unavailable; using heuristic analyses")
         return {}
 
     parsed = _extract_json_block(raw) or {}
+    logger.info("Parsed LLM grading payload keys=%s", list(parsed.keys()))
     analyses_payload = parsed.get("analyses")
     if not isinstance(analyses_payload, list):
         return {}
@@ -301,6 +326,11 @@ def analyze_evidence(state: EvidenceState) -> EvidenceState:
         evidence_pack["llm_model"] = OPENAI_MODEL
     if state.get("llm_notes"):
         evidence_pack["notes"] = str(state["llm_notes"])
+    logger.info(
+        "Returning evidence pack with %d analyses and %d trials",
+        len(analyses),
+        len(trials),
+    )
     return {"evidence_pack": evidence_pack}
 
 
@@ -397,6 +427,12 @@ app.add_middleware(
 
 @app.post("/agents/evidence/search", response_model=EvidenceResponse)
 def evidence_search(payload: EvidenceRequest) -> EvidenceResponse:
+    logger.info(
+        "Received evidence request: diagnosis=%s age=%s egfr=%s",
+        payload.diagnosis,
+        payload.age,
+        payload.egfr,
+    )
     context: PatientContext = {
         "age": payload.age,
         "diagnosis": payload.diagnosis,
@@ -411,6 +447,10 @@ def evidence_search(payload: EvidenceRequest) -> EvidenceResponse:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
     pack = result["evidence_pack"]
+    logger.info(
+        "Evidence response ready (llm_model=%s)",
+        pack.get("llm_model"),
+    )
 
     return EvidenceResponse(evidence_pack=EvidencePackModel.parse_obj(pack))
 

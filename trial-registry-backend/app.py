@@ -1,6 +1,7 @@
 """Simple FastAPI service for managing clinical trial information."""
 from __future__ import annotations
 
+import logging
 import os
 from datetime import date
 from typing import List, Optional
@@ -11,6 +12,16 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 load_dotenv()
+
+logger = logging.getLogger("trial_registry")
+if not logger.handlers:
+    handler = logging.StreamHandler()
+    formatter = logging.Formatter(
+        "%(asctime)s [%(levelname)s] trial-registry: %(message)s"
+    )
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
+logger.setLevel(logging.INFO)
 
 ALLOW_ORIGINS = [
     origin.strip()
@@ -118,6 +129,7 @@ _trials: List[Trial] = [
 
 @app.get("/services", summary="Describe the clinical research services")
 def get_services() -> dict:
+    logger.info("GET /services")
     return {
         "name": "Clinical Research Services",
         "description": "Provides planning and day-to-day management for clinical trials.",
@@ -132,13 +144,16 @@ def get_services() -> dict:
 
 @app.get("/trials", response_model=List[Trial], summary="List clinical trials")
 def list_trials() -> List[Trial]:
+    logger.info("GET /trials (%d trials)", len(_trials))
     return _trials
 
 
 @app.get("/trials/{trial_id}", response_model=Trial, summary="Get a single trial by id")
 def get_trial(trial_id: int) -> Trial:
+    logger.info("GET /trials/%s", trial_id)
     for trial in _trials:
         if trial.id == trial_id:
+            logger.info("Returning trial id=%s nct_id=%s", trial.id, trial.nct_id)
             return trial
     raise HTTPException(status_code=404, detail="Trial not found")
 
@@ -150,9 +165,11 @@ def get_trial(trial_id: int) -> Trial:
     summary="Create a new clinical trial",
 )
 def create_trial(payload: TrialCreate) -> Trial:
+    logger.info("POST /trials title=%s", payload.title)
     next_id = max((trial.id for trial in _trials), default=0) + 1
     data = payload.dict()
     nct_id = data.pop("nct_id") or f"NCT{next_id:08d}"
     trial = Trial(id=next_id, nct_id=nct_id, **data)
     _trials.append(trial)
+    logger.info("Created trial id=%s nct_id=%s", trial.id, trial.nct_id)
     return trial

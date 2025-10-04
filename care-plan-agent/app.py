@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 from datetime import datetime
@@ -15,6 +16,16 @@ from langgraph.graph import END, StateGraph
 from pydantic import BaseModel, Field
 
 load_dotenv()
+
+logger = logging.getLogger("care_plan_agent")
+if not logger.handlers:
+    handler = logging.StreamHandler()
+    formatter = logging.Formatter(
+        "%(asctime)s [%(levelname)s] care-plan-agent: %(message)s"
+    )
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
+logger.setLevel(logging.INFO)
 
 EHR_SERVICE_URL = os.environ.get("EHR_SERVICE_URL", "http://127.0.0.1:8001")
 EVIDENCE_AGENT_URL = os.environ.get("EVIDENCE_AGENT_URL", "http://127.0.0.1:8003")
@@ -51,8 +62,10 @@ def _diagnosis_from_problems(problems: List[str]) -> str:
 
 def _call_llm(messages: List[dict[str, str]]) -> Optional[str]:
     if not OPENAI_API_KEY:
+        logger.info("OPENAI_API_KEY not set; skipping LLM plan drafting")
         return None
 
+    logger.info("Calling LLM model=%s for plan drafting", OPENAI_MODEL)
     headers = {
         "Authorization": f"Bearer {OPENAI_API_KEY}",
         "Content-Type": "application/json",
@@ -73,8 +86,11 @@ def _call_llm(messages: List[dict[str, str]]) -> Optional[str]:
         )
         response.raise_for_status()
         data = response.json()
-        return data["choices"][0]["message"]["content"]
-    except (requests.RequestException, KeyError, IndexError, ValueError):
+        content = data["choices"][0]["message"]["content"]
+        logger.info("LLM response received (%d chars)", len(content))
+        return content
+    except (requests.RequestException, KeyError, IndexError, ValueError) as exc:
+        logger.exception("LLM call failed: %s", exc)
         return None
 
 
@@ -94,6 +110,7 @@ def _extract_json_block(text: str) -> Optional[Dict[str, Any]]:
 
 def fetch_patient_summary(state: CarePlanState) -> CarePlanState:
     patient_id = state["request"]["patient_id"]
+    logger.info("Fetching EHR summary for patient_id=%s", patient_id)
     try:
         response = requests.get(
             f"{EHR_SERVICE_URL.rstrip('/')}/patients/{patient_id}/summary", timeout=5
@@ -102,7 +119,14 @@ def fetch_patient_summary(state: CarePlanState) -> CarePlanState:
     except requests.RequestException as exc:
         raise RuntimeError("Failed to fetch patient summary from EHR Service") from exc
 
-    return {"patient_summary": response.json()}
+    summary = response.json()
+    logger.info(
+        "EHR summary received for patient_id=%s (last_a1c=%s, last_egfr=%s)",
+        patient_id,
+        summary.get("last_a1c"),
+        summary.get("last_egfr"),
+    )
+    return {"patient_summary": summary}
 
 
 def call_evidence_agent(state: CarePlanState) -> CarePlanState:
@@ -122,6 +146,12 @@ def call_evidence_agent(state: CarePlanState) -> CarePlanState:
     if payload["age"] is None or payload["egfr"] is None:
         raise RuntimeError("Patient summary missing age or eGFR for evidence lookup")
 
+    logger.info(
+        "Requesting evidence pack for patient_id=%s (diagnosis=%s, comorbidities=%s)",
+        state["request"]["patient_id"],
+        diagnosis,
+        payload["comorbidities"],
+    )
     try:
         response = requests.post(
             f"{EVIDENCE_AGENT_URL.rstrip('/')}/agents/evidence/search",
@@ -133,7 +163,13 @@ def call_evidence_agent(state: CarePlanState) -> CarePlanState:
         raise RuntimeError("Failed to reach Evidence Agent") from exc
 
     data = response.json()
-    return {"evidence_pack": data.get("evidence_pack", {})}
+    pack = data.get("evidence_pack", {})
+    logger.info(
+        "Evidence pack received: %d analyses, %d trials",
+        len(pack.get("analyses", [])),
+        len(pack.get("trials", [])),
+    )
+    return {"evidence_pack": pack}
 
 
 def _derive_trial_matches(evidence_pack: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -280,21 +316,52 @@ def _merge_plan_cards(primary: Dict[str, Any], fallback: Dict[str, Any]) -> Dict
             merged["citations"] = citations
 
     if primary.get("trial_matches"):
-        matches: List[Dict[str, Any]] = []
-        for trial in _coerce_list(primary["trial_matches"]):
-            if not isinstance(trial, dict):
-                continue
-            match = TrialMatchModel(
-                title=trial.get("title"),
-                nct_id=trial.get("nct_id"),
-                site_distance_km=trial.get("site_distance_km"),
-                status=trial.get("status"),
-                why_match=trial.get("why_match") or trial.get("summary"),
-            ).dict(exclude_none=True)
-            if match.get("title"):
-                matches.append(match)
-        if matches:
-            merged["trial_matches"] = matches
+        existing_matches = [m for m in merged.get("trial_matches", []) if isinstance(m, dict)]
+        primary_trials = [t for t in _coerce_list(primary["trial_matches"]) if isinstance(t, dict)]
+        combined: List[Dict[str, Any]] = []
+
+        def _pop_candidate(base: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+            title = str(base.get("title", "")).lower()
+            nct_id = str(base.get("nct_id", "")).lower()
+            for idx, candidate in enumerate(primary_trials):
+                cand_title = str(candidate.get("title", "")).lower()
+                cand_nct = str(candidate.get("nct_id", "")).lower()
+                if (nct_id and cand_nct and cand_nct == nct_id) or (
+                    title and cand_title and cand_title == title
+                ):
+                    return primary_trials.pop(idx)
+            return None
+
+        for base in existing_matches:
+            candidate = _pop_candidate(base) or {}
+            merged_match = TrialMatchModel(
+                title=candidate.get("title") or base.get("title"),
+                nct_id=candidate.get("nct_id") or base.get("nct_id"),
+                site_distance_km=
+                candidate.get("site_distance_km")
+                if isinstance(candidate.get("site_distance_km"), (int, float))
+                else base.get("site_distance_km"),
+                status=candidate.get("status") or base.get("status"),
+                why_match=candidate.get("why_match")
+                or candidate.get("summary")
+                or base.get("why_match")
+                or base.get("summary"),
+            ).dict()
+            combined.append(merged_match)
+
+        for candidate in primary_trials:
+            combined.append(
+                TrialMatchModel(
+                    title=candidate.get("title"),
+                    nct_id=candidate.get("nct_id"),
+                    site_distance_km=candidate.get("site_distance_km"),
+                    status=candidate.get("status"),
+                    why_match=candidate.get("why_match") or candidate.get("summary"),
+                ).dict()
+            )
+
+        if combined:
+            merged["trial_matches"] = combined
 
     if primary.get("evidence_highlights"):
         merged["evidence_highlights"] = [
@@ -342,6 +409,10 @@ def llm_plan_card(state: CarePlanState) -> CarePlanState:
         return {}
 
     parsed = _extract_json_block(raw) or {}
+    logger.info(
+        "LLM plan card parsed with keys=%s",
+        list(parsed.keys()),
+    )
     plan_candidate = parsed.get("plan_card") or parsed
     if not isinstance(plan_candidate, dict):
         return {}
@@ -351,6 +422,10 @@ def llm_plan_card(state: CarePlanState) -> CarePlanState:
     if parsed.get("notes"):
         plan_candidate.setdefault("notes", parsed["notes"])
 
+    logger.info(
+        "LLM produced plan card keys=%s",
+        list(plan_candidate.keys()),
+    )
     return {"llm_plan_card": plan_candidate}
 
 
@@ -359,8 +434,16 @@ def assemble_plan(state: CarePlanState) -> CarePlanState:
     llm_card = state.get("llm_plan_card")
     if llm_card:
         plan_card = _merge_plan_cards(llm_card, heuristic)
+        logger.info(
+            "Merged LLM and heuristic plan cards for patient_id=%s",
+            state["request"]["patient_id"],
+        )
     else:
         plan_card = heuristic
+        logger.info(
+            "Using heuristic-only plan card for patient_id=%s",
+            state["request"]["patient_id"],
+        )
 
     return {"plan_card": plan_card}
 

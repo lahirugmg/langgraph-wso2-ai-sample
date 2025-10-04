@@ -1,6 +1,7 @@
 """FastAPI service that mocks basic EHR capabilities for demo workflows."""
 from __future__ import annotations
 
+import logging
 import os
 from datetime import datetime
 from typing import Dict, List, Optional
@@ -12,6 +13,16 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 load_dotenv()
+
+logger = logging.getLogger("ehr_service")
+if not logger.handlers:
+    handler = logging.StreamHandler()
+    formatter = logging.Formatter(
+        "%(asctime)s [%(levelname)s] ehr-service: %(message)s"
+    )
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
+logger.setLevel(logging.INFO)
 
 ALLOW_ORIGINS = [
     origin.strip()
@@ -246,9 +257,15 @@ _PATIENT_LABS: Dict[str, List[LabValue]] = {
     summary="Get demographics, problem list, meds, vitals, and key labs",
 )
 def get_patient_summary(patient_id: str) -> PatientSummary:
+    logger.info("GET /patients/%s/summary", patient_id)
     summary = _PATIENT_SUMMARIES.get(patient_id)
     if not summary:
         raise HTTPException(status_code=404, detail="Patient not found")
+    logger.info(
+        "Returning summary for patient_id=%s (problems=%s)",
+        patient_id,
+        summary.problems,
+    )
     return summary
 
 
@@ -269,6 +286,12 @@ def get_patient_labs(
         description="Return only the most recent N lab results after filtering",
     ),
 ) -> LabResponse:
+    logger.info(
+        "GET /patients/%s/labs names=%s last_n=%s",
+        patient_id,
+        names,
+        last_n,
+    )
     lab_history = _PATIENT_LABS.get(patient_id)
     if not lab_history:
         raise HTTPException(status_code=404, detail="Patient not found or no lab history")
@@ -284,7 +307,13 @@ def get_patient_labs(
     if last_n is not None:
         filtered = filtered[:last_n]
 
-    return LabResponse(patient_id=patient_id, labs=filtered)
+    response = LabResponse(patient_id=patient_id, labs=filtered)
+    logger.info(
+        "Returning %d labs for patient_id=%s",
+        len(filtered),
+        patient_id,
+    )
+    return response
 
 
 @app.post(
@@ -294,8 +323,14 @@ def get_patient_labs(
     summary="Create a draft medication order",
 )
 def create_medication_order(order: MedicationOrder) -> OrderResponse:
+    logger.info(
+        "POST /orders/medication patient_id=%s medication=%s",
+        order.patient_id,
+        order.medication,
+    )
     # No persistence in the demo—just echo success with a generated draft id.
     order_id = f"draft-{uuid4()}"
+    logger.info("Draft medication order created id=%s", order_id)
     return OrderResponse(order_id=order_id, status="draft created")
 
 
