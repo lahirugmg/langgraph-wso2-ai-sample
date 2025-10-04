@@ -14,10 +14,13 @@ from datetime import datetime
 from typing import Any, List, Optional, TypedDict
 
 import requests
+from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from langgraph.graph import END, StateGraph
 from pydantic import BaseModel, Field
+
+load_dotenv()
 
 TRIAL_REGISTRY_URL = os.environ.get("TRIAL_REGISTRY_URL", "http://127.0.0.1:8002")
 OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")

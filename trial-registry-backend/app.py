@@ -1,22 +1,37 @@
 """Simple FastAPI service for managing clinical trial information."""
 from __future__ import annotations
 
+import os
 from datetime import date
 from typing import List, Optional
 
+from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
+load_dotenv()
+
+ALLOW_ORIGINS = [
+    origin.strip()
+    for origin in os.getenv("TRIAL_REGISTRY_ALLOW_ORIGINS", "*").split(",")
+    if origin.strip()
+]
+if not ALLOW_ORIGINS:
+    ALLOW_ORIGINS = ["*"]
+
 app = FastAPI(
-    title="Clinical Research Services API",
-    description="Minimal REST API for managing clinical trials",
+    title=os.getenv("TRIAL_REGISTRY_TITLE", "Clinical Research Services API"),
+    description=os.getenv(
+        "TRIAL_REGISTRY_DESCRIPTION",
+        "Minimal REST API for managing clinical trials",
+    ),
     version="0.2.0",
 )
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=ALLOW_ORIGINS,
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],

@@ -8,10 +8,13 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional, TypedDict
 
 import requests
+from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from langgraph.graph import END, StateGraph
 from pydantic import BaseModel, Field
+
+load_dotenv()
 
 EHR_SERVICE_URL = os.environ.get("EHR_SERVICE_URL", "http://127.0.0.1:8001")
 EVIDENCE_AGENT_URL = os.environ.get("EVIDENCE_AGENT_URL", "http://127.0.0.1:8003")

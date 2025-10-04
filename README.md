@@ -64,6 +64,8 @@ The portal calls the Care-Plan Agent via `/api/care-plan`, fetches labs through 
 
 Set `OPENAI_API_KEY` (or `LLM_API_KEY`) plus optional `OPENAI_MODEL`/`OPENAI_BASE_URL` to enable the LLM nodes. Without these variables the agents happily revert to heuristic logic, keeping local demos self-contained.
 
+![FHIR-aligned flow](media/FHIR_flow.png)
+
 ## Test the Care-Plan Agent
 1. Run the services above (Trial Registry, EHR, Evidence Agent).
 2. Trigger the agent: `curl -X POST http://127.0.0.1:8004/agents/care-plan/recommendation \
