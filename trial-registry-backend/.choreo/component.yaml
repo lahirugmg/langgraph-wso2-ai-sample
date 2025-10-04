@@ -33,6 +33,18 @@ spec:
       context: /
       # +optional Path to the OpenAPI specification file (for REST endpoints)
       # schemaFilePath: openapi.yaml
+
+  # +optional List of externally exposed endpoints
+  endpoints:
+    - name: trial-registry-service
+      displayName: Trial Registry Public API
+      service:
+        basePath: /
+        port: 8002
+      type: REST
+      networkVisibilities:
+        - Public
+        - Organization
   
   # +optional Build configuration for the component
   build:
