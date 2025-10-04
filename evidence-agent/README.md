@@ -21,7 +21,6 @@ Set the following to enable LLM grading:
 
 ```bash
 export OPENAI_API_KEY=sk-...
-# Optional overrides
 export OPENAI_MODEL=gpt-4o-mini
 export OPENAI_BASE_URL=https://api.openai.com/v1
 ```

@@ -16,7 +16,7 @@ Environment variables:
 - `EHR_SERVICE_URL` — base URL for the EHR backend (default `http://127.0.0.1:8001`).
 - `EVIDENCE_AGENT_URL` — base URL for the Evidence Agent (default `http://127.0.0.1:8003`).
 - `DEFAULT_GEO_LAT` / `DEFAULT_GEO_LON` / `DEFAULT_GEO_RADIUS` — adjust the location payload sent to the Evidence Agent.
-- `OPENAI_API_KEY` (or `LLM_API_KEY`) — enables the LLM plan-card node to draft recommendations. Optional `OPENAI_MODEL` / `OPENAI_BASE_URL` override the defaults.
+- `OPENAI_API_KEY` — enables the LLM plan-card node to draft recommendations. Optional `OPENAI_MODEL` / `OPENAI_BASE_URL` override the defaults.
 
 ## API
 - `POST /agents/care-plan/recommendation`
