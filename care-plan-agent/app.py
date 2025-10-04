@@ -204,28 +204,102 @@ def _draft_plan_card(state: CarePlanState) -> Dict[str, Any]:
 
 
 def _merge_plan_cards(primary: Dict[str, Any], fallback: Dict[str, Any]) -> Dict[str, Any]:
+    primary = primary or {}
     merged = fallback.copy()
 
-    for key in [
-        "recommendation",
-        "rationale",
-        "alternatives",
-        "safety_checks",
-        "citations",
-        "trial_matches",
-        "evidence_highlights",
-    ]:
-        if key in primary and primary[key]:
-            merged[key] = primary[key]
+    def _coerce_list(value):
+        if value is None:
+            return []
+        if isinstance(value, list):
+            return value
+        return [value]
+
+    if isinstance(primary.get("recommendation"), str):
+        merged["recommendation"] = primary["recommendation"]
+    if isinstance(primary.get("rationale"), str):
+        merged["rationale"] = primary["rationale"]
+    if primary.get("alternatives"):
+        merged["alternatives"] = [str(item) for item in _coerce_list(primary["alternatives"])]
+    if primary.get("safety_checks"):
+        merged["safety_checks"] = [str(item) for item in _coerce_list(primary["safety_checks"])]
 
     if "orders" in primary and isinstance(primary["orders"], dict):
         merged_orders = merged.get("orders", {}).copy()
         primary_orders = primary["orders"]
-        if "medication" in primary_orders and primary_orders["medication"]:
-            merged_orders["medication"] = primary_orders["medication"]
-        if "labs" in primary_orders and primary_orders["labs"]:
-            merged_orders["labs"] = primary_orders["labs"]
+
+        if isinstance(primary_orders.get("medication"), dict):
+            med = primary_orders["medication"]
+            name = med.get("name") or med.get("drug") or med.get("medication")
+            dose = med.get("dose") or med.get("strength")
+            start_today = med.get("start_today")
+            medication: Dict[str, Any] = merged_orders.get("medication", {}).copy()
+            if name:
+                medication["name"] = name
+            if dose:
+                medication["dose"] = dose
+            if isinstance(start_today, bool):
+                medication["start_today"] = start_today
+            merged_orders["medication"] = medication
+
+        if primary_orders.get("labs"):
+            labs: List[Dict[str, Any]] = []
+            for lab in _coerce_list(primary_orders["labs"]):
+                if not isinstance(lab, dict):
+                    continue
+                name = lab.get("name") or lab.get("test")
+                due = lab.get("due_in_days")
+                if due is None and lab.get("frequency"):
+                    freq = str(lab["frequency"]).lower()
+                    if "week" in freq:
+                        due = 7
+                    elif "month" in freq:
+                        due = 30
+                    elif "day" in freq:
+                        due = 1
+                if name and isinstance(due, (int, float)):
+                    labs.append({"name": str(name), "due_in_days": int(due)})
+            if labs:
+                merged_orders["labs"] = labs
+
         merged["orders"] = merged_orders
+
+    if primary.get("citations"):
+        citations: List[Dict[str, Any]] = []
+        for citation in _coerce_list(primary["citations"]):
+            if not isinstance(citation, dict):
+                continue
+            ctype = citation.get("type") or citation.get("category") or "Reference"
+            entry = CitationModel(
+                type=str(ctype),
+                id=citation.get("id") or citation.get("title"),
+                org=citation.get("org") or citation.get("organization"),
+                year=citation.get("year"),
+            ).dict(exclude_none=True)
+            citations.append(entry)
+        if citations:
+            merged["citations"] = citations
+
+    if primary.get("trial_matches"):
+        matches: List[Dict[str, Any]] = []
+        for trial in _coerce_list(primary["trial_matches"]):
+            if not isinstance(trial, dict):
+                continue
+            match = TrialMatchModel(
+                title=trial.get("title"),
+                nct_id=trial.get("nct_id"),
+                site_distance_km=trial.get("site_distance_km"),
+                status=trial.get("status"),
+                why_match=trial.get("why_match") or trial.get("summary"),
+            ).dict(exclude_none=True)
+            if match.get("title"):
+                matches.append(match)
+        if matches:
+            merged["trial_matches"] = matches
+
+    if primary.get("evidence_highlights"):
+        merged["evidence_highlights"] = [
+            str(item) for item in _coerce_list(primary["evidence_highlights"])
+        ]
 
     for optional_key in ["llm_model", "generated_at", "notes"]:
         if primary.get(optional_key):
@@ -277,7 +351,7 @@ def llm_plan_card(state: CarePlanState) -> CarePlanState:
     if parsed.get("notes"):
         plan_candidate.setdefault("notes", parsed["notes"])
 
-    return {"llm_plan_card": plan_candidate, "plan_card": plan_candidate}
+    return {"llm_plan_card": plan_candidate}
 
 
 def assemble_plan(state: CarePlanState) -> CarePlanState:
