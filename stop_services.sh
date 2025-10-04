@@ -8,18 +8,15 @@ stop_process() {
   local name="$1"
   local pattern="$2"
 
-  # shellcheck disable=SC2009
   local pids
   pids=$(pgrep -f "$pattern" || true)
 
-  if [[ -z "$pids" ]];
-  then
+  if [[ -z "$pids" ]]; then
     echo "$name is not running."
     return
   fi
 
   echo "Stopping $name (PIDs: $pids)..."
-  # SIGTERM by default for graceful shutdown
   kill $pids
   wait $pids 2>/dev/null || true
   echo "$name stopped."
@@ -27,7 +24,9 @@ stop_process() {
 
 stop_process "trial registry service" "uvicorn app:app --app-dir $ROOT_DIR/trial-registry-backend"
 stop_process "EHR service" "uvicorn app:app --app-dir $ROOT_DIR/ehr-backend"
-stop_process "care plan agent" "$ROOT_DIR/care-plan-agent/simple_langgraph.py"
+stop_process "evidence agent" "uvicorn evidence_agent:app --app-dir $ROOT_DIR/evidence-agent"
+stop_process "care plan agent" "uvicorn app:app --app-dir $ROOT_DIR/care-plan-agent"
+stop_process "frontend" "next dev -p 8080"
 
 echo
 read -rp "Do you want to delete the logs directory? (y/N) " reply

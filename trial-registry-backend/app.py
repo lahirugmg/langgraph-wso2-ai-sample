@@ -5,12 +5,21 @@ from datetime import date
 from typing import List, Optional
 
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 app = FastAPI(
     title="Clinical Research Services API",
     description="Minimal REST API for managing clinical trials",
-    version="0.1.0",
+    version="0.2.0",
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 
@@ -18,6 +27,7 @@ class Trial(BaseModel):
     """Represents a clinical trial tracked by the service."""
 
     id: int = Field(..., example=1)
+    nct_id: str = Field(..., example="NCT01234567")
     title: str = Field(..., example="Immunotherapy Study for Lung Cancer")
     condition: str = Field(..., example="Non-small cell lung cancer")
     phase: str = Field(..., example="Phase II")
@@ -25,11 +35,19 @@ class Trial(BaseModel):
     principal_investigator: str = Field(..., example="Dr. Jane Doe")
     start_date: date = Field(..., example="2024-01-15")
     end_date: Optional[date] = Field(None, example="2025-06-30")
+    site_distance_km: Optional[float] = Field(
+        None, example=12.5, description="Approximate distance from patient in km"
+    )
+    eligibility_summary: Optional[str] = Field(
+        None,
+        example="Adults 40-75 with type 2 diabetes and eGFR 45-60",
+    )
 
 
 class TrialCreate(BaseModel):
     """Payload for creating a new clinical trial."""
 
+    nct_id: Optional[str] = None
     title: str
     condition: str
     phase: str
@@ -43,23 +61,42 @@ class TrialCreate(BaseModel):
 _trials: List[Trial] = [
     Trial(
         id=1,
-        title="CardioHealth Outcomes Study",
-        condition="Hypertension",
+        nct_id="NCT05566789",
+        title="SGLT2i Outcomes in CKD Stage 3",
+        condition="Type 2 diabetes mellitus",
         phase="Phase III",
-        status="Active",
+        status="Recruiting",
         principal_investigator="Dr. Amina Perera",
         start_date=date(2023, 9, 1),
         end_date=None,
+        site_distance_km=12.4,
+        eligibility_summary="Adults 40-75 with type 2 diabetes and eGFR 45-60",
     ),
     Trial(
         id=2,
-        title="NeuroBalance Cognitive Therapy",
-        condition="Parkinson's Disease",
+        nct_id="NCT07654321",
+        title="GLP-1 RA Renal Outcomes Registry",
+        condition="Type 2 diabetes mellitus",
         phase="Phase II",
         status="Recruiting",
         principal_investigator="Dr. Liam Chen",
         start_date=date(2024, 2, 12),
         end_date=date(2025, 5, 30),
+        site_distance_km=14.9,
+        eligibility_summary="T2D adults with eGFR 30-60 on stable metformin",
+    ),
+    Trial(
+        id=3,
+        nct_id="NCT09999888",
+        title="CardioHealth Outcomes Study",
+        condition="Hypertension",
+        phase="Phase III",
+        status="Completed",
+        principal_investigator="Dr. Amina Perera",
+        start_date=date(2021, 5, 1),
+        end_date=date(2023, 3, 10),
+        site_distance_km=52.0,
+        eligibility_summary="Adults with resistant hypertension",
     ),
 ]
 
@@ -99,6 +136,8 @@ def get_trial(trial_id: int) -> Trial:
 )
 def create_trial(payload: TrialCreate) -> Trial:
     next_id = max((trial.id for trial in _trials), default=0) + 1
-    trial = Trial(id=next_id, **payload.dict())
+    data = payload.dict()
+    nct_id = data.pop("nct_id") or f"NCT{next_id:08d}"
+    trial = Trial(id=next_id, nct_id=nct_id, **data)
     _trials.append(trial)
     return trial

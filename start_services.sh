@@ -10,14 +10,31 @@ start_process() {
   shift
   local log_file="$LOG_DIR/${name}.log"
 
-  # Truncate previous logs to keep runs clean.
   : > "$log_file"
-
   echo "Starting $name..."
   nohup "$@" >> "$log_file" 2>&1 &
   local pid=$!
   echo "$name started (PID $pid). Logging to $log_file"
 }
+
+ensure_python_requirements() {
+  local service_name="$1"
+  local req_path="$2"
+  local log_file="$LOG_DIR/${service_name}-deps.log"
+
+  if [[ -f "$req_path" ]]; then
+    echo "Ensuring Python dependencies for $service_name (logging to $log_file)"
+    python3 -m pip install --user --break-system-packages -r "$req_path" >> "$log_file" 2>&1 || {
+      echo "Failed installing dependencies for $service_name. Check $log_file" >&2
+      exit 1
+    }
+  fi
+}
+
+ensure_python_requirements "trial-registry" "$ROOT_DIR/trial-registry-backend/requirements.txt"
+ensure_python_requirements "ehr" "$ROOT_DIR/ehr-backend/requirements.txt"
+ensure_python_requirements "evidence-agent" "$ROOT_DIR/evidence-agent/requirements.txt"
+ensure_python_requirements "care-plan-agent" "$ROOT_DIR/care-plan-agent/requirements.txt"
 
 start_process "trial-registry-service" \
   uvicorn app:app --app-dir "$ROOT_DIR/trial-registry-backend" --host 0.0.0.0 --port 8002
@@ -25,14 +42,35 @@ start_process "trial-registry-service" \
 start_process "ehr-service" \
   uvicorn app:app --app-dir "$ROOT_DIR/ehr-backend" --host 0.0.0.0 --port 8001
 
-start_process "care-plan-agent" \
-  python "$ROOT_DIR/care-plan-agent/simple_langgraph.py"
+# Allow services a moment to come online before agents make requests.
+sleep 2
+
+start_process "evidence-agent-service" \
+  uvicorn evidence_agent:app --app-dir "$ROOT_DIR/evidence-agent" --host 0.0.0.0 --port 8003
+
+start_process "care-plan-agent-service" \
+  uvicorn app:app --app-dir "$ROOT_DIR/care-plan-agent" --host 0.0.0.0 --port 8004
+
+if [[ ! -d "$ROOT_DIR/frontend/node_modules" ]]; then
+  echo "Installing frontend dependencies..."
+  npm --prefix "$ROOT_DIR/frontend" install >> "$LOG_DIR/frontend-install.log" 2>&1
+fi
+
+start_process "frontend" \
+  npm --prefix "$ROOT_DIR/frontend" run dev
+
+echo "Frontend available at http://127.0.0.1:8080"
+if [[ -z "${OPENAI_API_KEY:-}" && -z "${LLM_API_KEY:-}" ]]; then
+  echo "(Tip) Set OPENAI_API_KEY or LLM_API_KEY to enable LLM-backed nodes."
+fi
 
 cat <<INFO
 
 All services launched. Active logs:
   - $LOG_DIR/trial-registry-service.log
   - $LOG_DIR/ehr-service.log
-  - $LOG_DIR/care-plan-agent.log
+  - $LOG_DIR/evidence-agent-service.log
+  - $LOG_DIR/care-plan-agent-service.log
+  - $LOG_DIR/frontend.log
 
 INFO

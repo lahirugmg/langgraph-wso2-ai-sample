@@ -1,19 +1,20 @@
-# Clinical Research Services API
+# Trial Registry Service
 
-Simple FastAPI service that exposes REST endpoints for clinical trial management.
+FastAPI service that stores mock clinical trials and exposes metadata for the Evidence Agent.
 
 ## Setup
-1. Create and activate a Python 3.10+ virtual environment.
-2. Install dependencies: `pip install -r backend/requirements.txt` from the repo root.
+1. Create/activate a Python 3.10+ virtual environment.
+2. Install dependencies: `pip install -r trial-registry-backend/requirements.txt`.
 
-## Run the service
-- Development server: `uvicorn backend.app:app --reload`
-- By default the API listens on `http://127.0.0.1:8000`.
+## Run
+```bash
+uvicorn app:app --app-dir trial-registry-backend --reload --port 8002
+```
 
-## Available endpoints
-- `GET /services` — overview of supported clinical research capabilities.
-- `GET /trials` — list the seeded clinical trials.
-- `GET /trials/{trial_id}` — fetch a single trial.
-- `POST /trials` — create a new trial (JSON body matching the schema).
+## Endpoints
+- `GET /services` — service capabilities overview.
+- `GET /trials` — list seeded trials (includes `nct_id`, `site_distance_km`, and eligibility summary text).
+- `GET /trials/{trial_id}` — retrieve a specific trial.
+- `POST /trials` — create a new trial; `nct_id` auto-generates if omitted.
 
-Interactive documentation is available at `http://127.0.0.1:8000/docs` once the server is running.
+Interactive documentation: <http://127.0.0.1:8002/docs>.

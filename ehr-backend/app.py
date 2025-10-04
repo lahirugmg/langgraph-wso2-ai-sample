@@ -1,4 +1,4 @@
-"""FastAPI service that mocks basic EHR and trial registry capabilities."""
+"""FastAPI service that mocks basic EHR capabilities for demo workflows."""
 from __future__ import annotations
 
 from datetime import datetime
@@ -6,15 +6,22 @@ from typing import Dict, List, Optional
 from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException, Query
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 app = FastAPI(
-    title="EHR + Trial Registry Service",
-    description=(
-        "Demo API offering patient summaries, lab retrieval, medication order drafts, "
-        "and trial evidence lookups."
-    ),
-    version="0.1.0",
+    title="EHR Service",
+    description=
+    "Demo API offering patient summaries, lab retrieval, and medication order drafts.",
+    version="0.2.0",
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 
@@ -47,6 +54,11 @@ class LabValue(BaseModel):
     value: float
     unit: str
     collected_at: datetime
+
+
+class LabResponse(BaseModel):
+    patient_id: str
+    labs: List[LabValue]
 
 
 class MedicationOrder(BaseModel):
@@ -112,6 +124,29 @@ _PATIENT_SUMMARIES: Dict[str, PatientSummary] = {
         last_a1c=7.4,
         last_egfr=54.0,
     ),
+    "12873": PatientSummary(
+        demographics=PatientDemographics(
+            name="Avery Patel",
+            age=58,
+            gender="female",
+            mrn="12873",
+        ),
+        problems=[
+            "Type 2 diabetes mellitus",
+            "Chronic kidney disease stage 3",
+            "Hypertension",
+        ],
+        medications=["Metformin 1000 mg BID", "Losartan 50 mg daily"],
+        vitals=VitalSigns(
+            systolic=132,
+            diastolic=82,
+            heart_rate=76,
+            weight_kg=79.8,
+            updated_at=datetime(2025, 9, 12, 9, 15),
+        ),
+        last_a1c=8.2,
+        last_egfr=44.0,
+    ),
 }
 
 _PATIENT_LABS: Dict[str, List[LabValue]] = {
@@ -146,7 +181,45 @@ _PATIENT_LABS: Dict[str, List[LabValue]] = {
             unit="mg/dL",
             collected_at=datetime(2024, 9, 1, 8, 0),
         ),
-    ]
+    ],
+    "12873": [
+        LabValue(
+            name="HbA1c",
+            value=8.2,
+            unit="%",
+            collected_at=datetime(2025, 9, 5, 8, 0),
+        ),
+        LabValue(
+            name="HbA1c",
+            value=8.6,
+            unit="%",
+            collected_at=datetime(2025, 6, 2, 8, 10),
+        ),
+        LabValue(
+            name="HbA1c",
+            value=8.9,
+            unit="%",
+            collected_at=datetime(2025, 3, 3, 8, 5),
+        ),
+        LabValue(
+            name="eGFR",
+            value=44.0,
+            unit="mL/min/1.73m2",
+            collected_at=datetime(2025, 9, 12, 7, 55),
+        ),
+        LabValue(
+            name="eGFR",
+            value=46.0,
+            unit="mL/min/1.73m2",
+            collected_at=datetime(2025, 6, 9, 7, 50),
+        ),
+        LabValue(
+            name="eGFR",
+            value=48.0,
+            unit="mL/min/1.73m2",
+            collected_at=datetime(2025, 3, 10, 7, 45),
+        ),
+    ],
 }
 
 
@@ -167,7 +240,7 @@ def get_patient_summary(patient_id: str) -> PatientSummary:
 
 @app.get(
     "/patients/{patient_id}/labs",
-    response_model=List[LabValue],
+    response_model=LabResponse,
     summary="Retrieve lab history for a patient",
 )
 def get_patient_labs(
@@ -181,12 +254,12 @@ def get_patient_labs(
         ge=1,
         description="Return only the most recent N lab results after filtering",
     ),
-) -> List[LabValue]:
+) -> LabResponse:
     lab_history = _PATIENT_LABS.get(patient_id)
     if not lab_history:
         raise HTTPException(status_code=404, detail="Patient not found or no lab history")
 
-    filtered = lab_history
+    filtered = list(lab_history)
     if names:
         allowed = {name.strip().lower() for name in names.split(",") if name.strip()}
         filtered = [lab for lab in filtered if lab.name.lower() in allowed]
@@ -197,7 +270,7 @@ def get_patient_labs(
     if last_n is not None:
         filtered = filtered[:last_n]
 
-    return filtered
+    return LabResponse(patient_id=patient_id, labs=filtered)
 
 
 @app.post(
