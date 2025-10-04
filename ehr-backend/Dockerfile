@@ -1,15 +1,15 @@
-FROM python:3.11-alpine
+FROM python:alpine
 
-WORKDIR /app
+WORKDIR /python-docker
 
-COPY requirements.txt ./requirements.txt
-RUN pip install --no-cache-dir -r requirements.txt
+COPY requirements.txt requirements.txt
+RUN pip3 install --no-cache-dir -r requirements.txt
 
 COPY . .
 RUN ls
 
-RUN addgroup -g 10016 choreo \
-    && adduser --disabled-password --no-create-home --uid 10016 --ingroup choreo choreouser
+RUN addgroup -g 10016 choreo && \
+    adduser --disabled-password --no-create-home --uid 10016 --ingroup choreo choreouser
 USER 10016
 
 EXPOSE 8001

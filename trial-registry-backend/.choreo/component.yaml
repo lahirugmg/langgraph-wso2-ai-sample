@@ -32,7 +32,7 @@ spec:
       # +optional Context (base path) of the endpoint
       context: /
       # +optional Path to the OpenAPI specification file (for REST endpoints)
-      # schemaFilePath: openapi.yaml
+      schemaFilePath: openapi.yaml
 
   # +optional List of externally exposed endpoints
   endpoints:
@@ -45,6 +45,7 @@ spec:
       networkVisibilities:
         - Public
         - Organization
+      schemaFilePath: openapi.yaml
   
   # +optional Build configuration for the component
   build:

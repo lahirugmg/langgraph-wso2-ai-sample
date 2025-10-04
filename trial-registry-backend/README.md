@@ -12,6 +12,8 @@ FastAPI service that stores mock clinical trials and exposes metadata for the Ev
 uvicorn app:app --app-dir trial-registry-backend --reload --port 8002
 ```
 
+The OpenAPI definition is available at `trial-registry-backend/openapi.yaml`.
+
 ## Endpoints
 - `GET /services` — service capabilities overview.
 - `GET /trials` — list seeded trials (includes `nct_id`, `site_distance_km`, and eligibility summary text).
