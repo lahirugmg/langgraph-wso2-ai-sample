@@ -90,3 +90,17 @@ public type ErrorResponse record {
     string 'error;
     string message;
 };
+
+// Complete patient record for file storage
+public type PatientRecord record {
+    Demographics demographics;
+    Problem[] problems;
+    Medication[] medications;
+    Vitals[] vitals;
+    LabResult[] labs;
+};
+
+// Data container for the entire data file
+public type PatientData record {
+    PatientRecord[] patients;
+};
