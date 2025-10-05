@@ -1,0 +1,8 @@
+[package]
+org = "lahirus"
+name = "trial_registry_backend"
+version = "0.1.0"
+title = "trial-registry-backend"
+
+[build-options]
+sticky = true
