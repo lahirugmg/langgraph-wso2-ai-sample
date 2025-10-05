@@ -155,18 +155,29 @@ service /ehr on ehrListener {
     }
 }
 
-// Initialize data file with sample data - force recreation if needed
+// Initialize data file with sample data if it doesn't exist
 function initializeDataFile() {
-    // Always recreate the file to ensure proper format
-    PatientData initialData = {
-        patients: getSamplePatients()
-    };
+    // Check if file exists by trying to read it
+    string|io:Error fileContent = io:fileReadString(DATA_FILE);
     
-    string dataJson = initialData.toJsonString();
-    io:Error? writeResult = io:fileWriteString(DATA_FILE, dataJson);
-    
-    if (writeResult is io:Error) {
-        // Handle error - could log this in a real application
+    // If file doesn't exist or is empty, create it with sample data
+    if (fileContent is io:Error || fileContent.trim().length() == 0) {
+        io:println("INFO: data.txt not found or empty. Creating file with sample data...");
+        
+        PatientData initialData = {
+            patients: getSamplePatients()
+        };
+        
+        string dataJson = initialData.toJsonString();
+        io:Error? writeResult = io:fileWriteString(DATA_FILE, dataJson);
+        
+        if (writeResult is io:Error) {
+            io:println("ERROR: Failed to create data.txt: " + writeResult.message());
+        } else {
+            io:println("SUCCESS: data.txt created with " + initialData.patients.length().toString() + " sample patients");
+        }
+    } else {
+        io:println("INFO: data.txt exists. Loading existing patient data...");
     }
 }
 
