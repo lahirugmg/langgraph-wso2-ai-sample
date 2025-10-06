@@ -1,8 +1,0 @@
-[package]
-org = "lahirus"
-name = "ehr_backend"
-version = "0.1.0"
-title = "ehr-backend"
-
-[build-options]
-sticky = true
