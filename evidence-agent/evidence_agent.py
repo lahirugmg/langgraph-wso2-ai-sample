@@ -32,24 +32,47 @@ if not logger.handlers:
     logger.addHandler(handler)
 logger.setLevel(logging.INFO)
 
-TRIAL_REGISTRY_URL = os.environ.get("TRIAL_REGISTRY_URL", "http://127.0.0.1:8002")
-OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
+def _strip_quotes(value: Optional[str]) -> Optional[str]:
+    if value is None:
+        return None
+    value = value.strip()
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+        return value[1:-1]
+    return value
+
+
+TRIAL_REGISTRY_URL = _strip_quotes(os.environ.get("TRIAL_REGISTRY_URL")) or "http://127.0.0.1:8002"
+OPENAI_MODEL = _strip_quotes(os.environ.get("OPENAI_MODEL")) or "gpt-4o-mini"
 
 # API Manager OAuth2 configuration
-API_MANAGER_BASE_URL = os.environ.get("API_MANAGER_BASE_URL")
-API_MANAGER_CLIENT_ID = os.environ.get("API_MANAGER_CLIENT_ID")
-API_MANAGER_CLIENT_SECRET = os.environ.get("API_MANAGER_CLIENT_SECRET")
-API_MANAGER_TOKEN_ENDPOINT = os.environ.get(
-    "API_MANAGER_TOKEN_ENDPOINT",
-    f"{API_MANAGER_BASE_URL}/oauth2/token" if API_MANAGER_BASE_URL else None
-)
-API_MANAGER_CHAT_ENDPOINT = os.environ.get(
-    "API_MANAGER_CHAT_ENDPOINT",
-    f"{API_MANAGER_BASE_URL}/healthcare/openai-api/v1.0/chat/completions" if API_MANAGER_BASE_URL else None
-)
+API_MANAGER_BASE_URL = _strip_quotes(os.environ.get("API_MANAGER_BASE_URL"))
+API_MANAGER_CLIENT_ID = _strip_quotes(os.environ.get("API_MANAGER_CLIENT_ID"))
+API_MANAGER_CLIENT_SECRET = _strip_quotes(os.environ.get("API_MANAGER_CLIENT_SECRET"))
+API_MANAGER_TOKEN_ENDPOINT = _strip_quotes(
+    os.environ.get(
+        "API_MANAGER_TOKEN_ENDPOINT",
+        f"{API_MANAGER_BASE_URL}/oauth2/token" if API_MANAGER_BASE_URL else None
+    )
+) or None
+API_MANAGER_CHAT_ENDPOINT = _strip_quotes(
+    os.environ.get(
+        "API_MANAGER_CHAT_ENDPOINT",
+        f"{API_MANAGER_BASE_URL}/healthcare/openai-api/v1.0/chat/completions" if API_MANAGER_BASE_URL else None
+    )
+) or None
+
+# MCP Gateway configuration
+MCP_GATEWAY_CLIENT_ID = _strip_quotes(os.environ.get("MCP_GATEWAY_CLIENT_ID"))
+MCP_GATEWAY_CLIENT_SECRET = _strip_quotes(os.environ.get("MCP_GATEWAY_CLIENT_SECRET"))
+MCP_GATEWAY_SCOPE = _strip_quotes(os.environ.get("MCP_GATEWAY_SCOPE"))
+MCP_GATEWAY_TOKEN_ENDPOINT = _strip_quotes(os.environ.get("MCP_GATEWAY_TOKEN_ENDPOINT")) or None
+
+EHR_MCP_URL = _strip_quotes(os.environ.get("EHR_MCP_URL"))
+TRIAL_REGISTRY_MCP_URL = _strip_quotes(os.environ.get("TRIAL_REGISTRY_MCP_URL"))
 
 # Cache for access token
 _access_token_cache = {"token": None, "expires_at": 0}
+_mcp_access_token_cache = {"token": None, "expires_at": 0}
 
 
 class GeoContext(TypedDict):
@@ -151,6 +174,58 @@ def _get_access_token() -> Optional[str]:
         return None
 
 
+def _get_mcp_access_token() -> Optional[str]:
+    """Fetch bearer token from the MCP gateway using client credentials."""
+    if not all(
+        [
+            MCP_GATEWAY_CLIENT_ID,
+            MCP_GATEWAY_CLIENT_SECRET,
+            MCP_GATEWAY_TOKEN_ENDPOINT,
+        ]
+    ):
+        logger.info("MCP gateway credentials not fully configured")
+        return None
+
+    import time
+
+    if _mcp_access_token_cache["token"] and _mcp_access_token_cache["expires_at"] > time.time() + 60:
+        logger.debug(
+            "Using cached MCP gateway token (valid for %d more seconds)",
+            int(_mcp_access_token_cache["expires_at"] - time.time()),
+        )
+        return _mcp_access_token_cache["token"]
+
+    logger.info("Requesting MCP gateway token from %s", MCP_GATEWAY_TOKEN_ENDPOINT)
+    data = {
+        "grant_type": "client_credentials",
+        "client_id": MCP_GATEWAY_CLIENT_ID,
+        "client_secret": MCP_GATEWAY_CLIENT_SECRET,
+    }
+    if MCP_GATEWAY_SCOPE:
+        data["scope"] = MCP_GATEWAY_SCOPE
+
+    try:
+        response = requests.post(
+            MCP_GATEWAY_TOKEN_ENDPOINT,
+            data=data,
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+            timeout=10,
+        )
+        logger.info("MCP gateway token response status: %d", response.status_code)
+        response.raise_for_status()
+
+        token_data = response.json()
+        access_token = token_data["access_token"]
+        expires_in = token_data.get("expires_in", 3600)
+
+        _mcp_access_token_cache["token"] = access_token
+        _mcp_access_token_cache["expires_at"] = time.time() + expires_in
+        return access_token
+    except (requests.RequestException, KeyError, ValueError) as exc:
+        logger.exception("✗ Failed to obtain MCP gateway token: %s", exc)
+        return None
+
+
 def _call_llm(messages: List[dict[str, str]]) -> Optional[str]:
     """Call a chat-completions style LLM endpoint if credentials exist.
 
@@ -234,10 +309,64 @@ def fetch_trials(state: EvidenceState) -> EvidenceState:
         context["egfr"],
         context.get("geo", {}).get("radius_km"),
     )
+    base_url = TRIAL_REGISTRY_MCP_URL or TRIAL_REGISTRY_URL
+    headers: Optional[dict[str, str]] = None
+
+    if TRIAL_REGISTRY_MCP_URL:
+        logger.info("Using Trial Registry MCP proxy: %s", TRIAL_REGISTRY_MCP_URL)
+        token = _get_mcp_access_token()
+        if not token:
+            raise RuntimeError("Failed to obtain MCP gateway token for Trial Registry service")
+        logger.info(
+            "Obtained MCP gateway token (length=%s)",
+            len(token),
+        )
+        headers = {"Authorization": f"Bearer {token}"}
+    else:
+        logger.info("Using direct Trial Registry service: %s", TRIAL_REGISTRY_URL)
+
+    url = f"{base_url.rstrip('/')}/trials"
+    logger.info(
+        "Invoking Trial Registry endpoint via %s: %s",
+        "MCP gateway" if TRIAL_REGISTRY_MCP_URL else "direct service",
+        url,
+    )
     try:
-        response = requests.get(f"{TRIAL_REGISTRY_URL.rstrip('/')}/trials", timeout=5)
+        response = requests.get(
+            url,
+            headers=headers,
+            timeout=10,
+        )
+        logger.info(
+            "Trial Registry endpoint responded: status=%s via %s",
+            response.status_code,
+            "MCP gateway" if TRIAL_REGISTRY_MCP_URL else "direct service",
+        )
         response.raise_for_status()
+    except requests.HTTPError as exc:
+        status = exc.response.status_code if exc.response is not None else "unknown"
+        body = exc.response.text[:200] if exc.response is not None and exc.response.text else ""
+        logger.error(
+            "Trial Registry MCP call failed: status=%s response=%s",
+            status,
+            body,
+        )
+        if TRIAL_REGISTRY_MCP_URL and TRIAL_REGISTRY_URL and base_url == TRIAL_REGISTRY_MCP_URL:
+            fallback_url = f"{TRIAL_REGISTRY_URL.rstrip('/')}/trials"
+            logger.info("Attempting fallback to direct Trial Registry service: %s", fallback_url)
+            try:
+                response = requests.get(fallback_url, timeout=5)
+                logger.info(
+                    "Trial Registry fallback responded: status=%s",
+                    response.status_code,
+                )
+                response.raise_for_status()
+            except requests.RequestException as fallback_exc:
+                raise RuntimeError("Failed to reach Trial Registry service via MCP and direct fallback") from fallback_exc
+        else:
+            raise RuntimeError("Failed to reach Trial Registry service via MCP") from exc
     except requests.RequestException as exc:
+        logger.exception("Trial Registry request failed: %s", exc)
         raise RuntimeError("Failed to reach Trial Registry service") from exc
 
     trials: List[dict] = response.json()
