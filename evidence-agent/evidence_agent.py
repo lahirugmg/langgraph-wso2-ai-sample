@@ -500,7 +500,8 @@ def fetch_trials(state: EvidenceState) -> EvidenceState:
     # Try MCP first if configured
     if TRIAL_REGISTRY_MCP_URL:
         logger.info("Using Trial Registry MCP server: %s", TRIAL_REGISTRY_MCP_URL)
-        mcp_result = _call_mcp_tool(TRIAL_REGISTRY_MCP_URL, "getTrials", {})
+        # Note: Trial Registry MCP tool is named "get" not "getTrials"
+        mcp_result = _call_mcp_tool(TRIAL_REGISTRY_MCP_URL, "get", {})
         
         if mcp_result and not mcp_result.get("isError", True):
             # Extract trials from MCP response
@@ -508,8 +509,18 @@ def fetch_trials(state: EvidenceState) -> EvidenceState:
             if content and isinstance(content, list) and len(content) > 0:
                 text_content = content[0].get("text", "")
                 try:
-                    trials = json.loads(text_content)
-                    logger.info("✓ Retrieved %d trials via MCP", len(trials))
+                    mcp_data = json.loads(text_content)
+                    # MCP returns {totalCount: N, trials: [...]} structure
+                    if isinstance(mcp_data, dict) and "trials" in mcp_data:
+                        trials = mcp_data["trials"]
+                        logger.info("✓ Retrieved %d trials via MCP (totalCount: %d)", 
+                                   len(trials), mcp_data.get("totalCount", len(trials)))
+                    elif isinstance(mcp_data, list):
+                        # Fallback: if it's already a list
+                        trials = mcp_data
+                        logger.info("✓ Retrieved %d trials via MCP", len(trials))
+                    else:
+                        logger.warning("Unexpected MCP response format: %s", type(mcp_data))
                 except json.JSONDecodeError:
                     logger.warning("Failed to parse MCP response as JSON, falling back to direct service")
         else:
@@ -534,9 +545,11 @@ def fetch_trials(state: EvidenceState) -> EvidenceState:
 
     scored: List[TrialMatch] = []
     for trial in trials:
+        # Handle both camelCase (MCP) and snake_case (Python backend) field names
         title = trial.get("title", "")
         condition = trial.get("condition", "")
-        eligibility = trial.get("eligibility_summary")
+        # Try both eligibilitySummary (MCP/Ballerina) and eligibility_summary (Python)
+        eligibility = trial.get("eligibilitySummary") or trial.get("eligibility_summary")
         score = 0.0
 
         if diagnosis in condition.lower():
@@ -548,19 +561,23 @@ def fetch_trials(state: EvidenceState) -> EvidenceState:
         if context["age"] >= 60:
             score += 0.3
 
-        distance = trial.get("site_distance_km")
+        # Try both distance (MCP) and site_distance_km (Python)
+        distance = trial.get("distance") or trial.get("site_distance_km")
         if geo and distance is not None and distance > geo["radius_km"]:
             continue
 
+        # Try both nctId (MCP) and nct_id (Python)
+        nct_id = trial.get("nctId") or trial.get("nct_id") or f"NCT{trial['id']:08d}"
+        
         scored.append(
             TrialMatch(
                 id=int(trial["id"]),
-                nct_id=trial.get("nct_id", f"NCT{trial['id']:08d}"),
+                nct_id=nct_id,
                 title=title,
                 condition=condition,
                 phase=trial.get("phase", ""),
                 status=trial.get("status", ""),
-                site_distance_km=trial.get("site_distance_km"),
+                site_distance_km=distance,
                 suitability=round(score, 2),
                 why_match=eligibility or f"Matches diagnosis {context['diagnosis']}",
             )

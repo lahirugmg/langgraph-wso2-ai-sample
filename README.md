@@ -84,6 +84,40 @@ For ad-hoc checks, run `python care-plan-agent/simple_langgraph.py` to confirm t
 - Start: `./start_services.sh` (launches all backends, agents, and the frontend; logs streamed to `logs/<service>.log`).
 - Stop: `./stop_services.sh` (gracefully terminates everything and optionally deletes the `logs/` directory).
 
+## MCP Integration
+
+The agents now support consuming backend services via **Model Context Protocol (MCP)** with OAuth2 authentication:
+
+- **Care Plan Agent**: Can consume EHR data via MCP gateway (`EHR_MCP_URL`)
+- **Evidence Agent**: Can consume trials via MCP gateway (`TRIAL_REGISTRY_MCP_URL`)
+- **Authentication**: OAuth2 client credentials flow with token caching
+- **Fallback**: Gracefully falls back to direct REST APIs if MCP is unavailable
+- **Schema Transformation**: Automatic conversion between Ballerina MCP and Python backend formats
+
+### Configuration (.env files)
+```bash
+# MCP Gateway OAuth2 Settings
+MCP_GATEWAY_CLIENT_ID=your_client_id
+MCP_GATEWAY_CLIENT_SECRET=your_client_secret
+MCP_GATEWAY_TOKEN_ENDPOINT=https://gateway/oauth2/token
+
+# MCP Server URLs
+EHR_MCP_URL=https://gateway/clinicagent/ehr-mcp/v1.0/mcp
+TRIAL_REGISTRY_MCP_URL=https://gateway/clinicagent/trial-registry-mcp/v1.0/mcp
+```
+
+### Key Features
+- ✅ **OAuth2 Token Caching**: Reduces authentication overhead (3600s TTL)
+- ✅ **Schema Transformation**: Maps Ballerina MCP format (camelCase, nested objects) to Python format (snake_case, flat values)
+- ✅ **Graceful Fallback**: Direct REST API calls when MCP unavailable
+- ✅ **JSON-RPC 2.0**: Proper MCP protocol implementation
+
+### Documentation
+- [`EHR_BACKEND_COMPARISON.md`](EHR_BACKEND_COMPARISON.md) - Schema differences between backends
+- [`SCHEMA_TRANSFORMATION_SUMMARY.md`](SCHEMA_TRANSFORMATION_SUMMARY.md) - Transformation implementation details
+- [`MCP_INTEGRATION.md`](MCP_INTEGRATION.md) - MCP setup guide
+- [`MCP_CHANGES_SUMMARY.md`](MCP_CHANGES_SUMMARY.md) - Code changes summary
+
 ## FHIR Relevance
 - **EHR Service** — could emit FHIR `Patient`, `Condition`, `Observation`, and `MedicationRequest` resources instead of ad-hoc JSON.
 - **Trial Registry Service** — trial payloads map cleanly to FHIR `ResearchStudy` / `ResearchSubject` resources, easing Evidence Agent ingestion.

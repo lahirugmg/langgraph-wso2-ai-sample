@@ -301,6 +301,105 @@ def _extract_json_block(text: str) -> Optional[Dict[str, Any]]:
     return None
 
 
+def _calculate_age(date_of_birth: str) -> int:
+    """Calculate age from date of birth string (YYYY-MM-DD)."""
+    try:
+        from datetime import datetime
+        dob = datetime.strptime(date_of_birth, "%Y-%m-%d")
+        today = datetime.today()
+        age = today.year - dob.year - ((today.month, today.day) < (dob.month, dob.day))
+        return age
+    except (ValueError, AttributeError):
+        return 0
+
+
+def _transform_mcp_to_python_format(mcp_data: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Transform Ballerina MCP response format to match Python EHR backend format.
+    
+    Handles:
+    - Field naming: camelCase → snake_case (lastA1c → last_a1c)
+    - Data structure: nested objects → primitives (lastA1c.value → float)
+    - Arrays: object arrays → string arrays for problems/medications
+    - Demographics: firstName+lastName → name, dateOfBirth → age
+    """
+    try:
+        # Transform demographics
+        demographics_in = mcp_data.get("demographics", {})
+        demographics_out = {
+            "name": f"{demographics_in.get('firstName', '')} {demographics_in.get('lastName', '')}".strip(),
+            "age": _calculate_age(demographics_in.get("dateOfBirth", "")) if demographics_in.get("dateOfBirth") else 0,
+            "gender": demographics_in.get("gender", "").lower(),
+            "mrn": demographics_in.get("patientId", "")
+        }
+        
+        # Transform problems: array of objects → array of strings
+        problems_in = mcp_data.get("problems", [])
+        problems_out = [
+            p.get("description", "") if isinstance(p, dict) else str(p)
+            for p in problems_in
+        ]
+        
+        # Transform medications: array of objects → array of strings
+        medications_in = mcp_data.get("medications", [])
+        medications_out = []
+        for m in medications_in:
+            if isinstance(m, dict):
+                name = m.get("name", "")
+                dosage = m.get("dosage", "")
+                frequency = m.get("frequency", "")
+                medications_out.append(f"{name} {dosage} {frequency}".strip())
+            else:
+                medications_out.append(str(m))
+        
+        # Transform vitals: array → single object with latest values
+        vitals_in = mcp_data.get("vitals", [])
+        if vitals_in and isinstance(vitals_in, list) and len(vitals_in) > 0:
+            latest_vitals = vitals_in[0]  # Assume first is latest
+            vitals_out = {
+                "systolic": latest_vitals.get("bloodPressureSystolic", 0),
+                "diastolic": latest_vitals.get("bloodPressureDiastolic", 0),
+                "heart_rate": latest_vitals.get("heartRate", 0),
+                "weight_kg": latest_vitals.get("weight", 0),
+                "updated_at": latest_vitals.get("recordDate", "")
+            }
+        else:
+            vitals_out = {
+                "systolic": 0,
+                "diastolic": 0,
+                "heart_rate": 0,
+                "weight_kg": 0,
+                "updated_at": ""
+            }
+        
+        # Transform lab values: object → float (extract .value field)
+        last_a1c_in = mcp_data.get("lastA1c", {})
+        last_a1c_out = last_a1c_in.get("value", 0.0) if isinstance(last_a1c_in, dict) else float(last_a1c_in or 0)
+        
+        last_egfr_in = mcp_data.get("lastEgfr", {})
+        last_egfr_out = last_egfr_in.get("value", 0.0) if isinstance(last_egfr_in, dict) else float(last_egfr_in or 0)
+        
+        # Build transformed response
+        transformed = {
+            "demographics": demographics_out,
+            "problems": problems_out,
+            "medications": medications_out,
+            "vitals": vitals_out,
+            "last_a1c": last_a1c_out,
+            "last_egfr": last_egfr_out
+        }
+        
+        logger.info("✓ Transformed MCP response: last_a1c=%s, last_egfr=%s, problems=%d, medications=%d",
+                   last_a1c_out, last_egfr_out, len(problems_out), len(medications_out))
+        
+        return transformed
+        
+    except Exception as e:
+        logger.error("✗ Failed to transform MCP response: %s", e)
+        logger.exception("Transformation error details:")
+        return mcp_data  # Return original if transformation fails
+
+
 def fetch_patient_summary(state: CarePlanState) -> CarePlanState:
     patient_id = state["request"]["patient_id"]
     logger.info("Fetching EHR summary for patient_id=%s", patient_id)
@@ -316,7 +415,12 @@ def fetch_patient_summary(state: CarePlanState) -> CarePlanState:
             if content and isinstance(content, list) and len(content) > 0:
                 text_content = content[0].get("text", "")
                 try:
-                    summary = json.loads(text_content)
+                    mcp_data = json.loads(text_content)
+                    logger.info("✓ Raw MCP response received for patient_id=%s", patient_id)
+                    
+                    # Transform Ballerina MCP format to Python backend format
+                    summary = _transform_mcp_to_python_format(mcp_data)
+                    
                     logger.info(
                         "✓ EHR summary received via MCP for patient_id=%s (last_a1c=%s, last_egfr=%s)",
                         patient_id,
@@ -324,8 +428,10 @@ def fetch_patient_summary(state: CarePlanState) -> CarePlanState:
                         summary.get("last_egfr"),
                     )
                     return {"patient_summary": summary}
-                except json.JSONDecodeError:
-                    logger.warning("Failed to parse MCP response as JSON, falling back to direct service")
+                except json.JSONDecodeError as e:
+                    logger.warning("Failed to parse MCP response as JSON: %s, falling back to direct service", e)
+                except Exception as e:
+                    logger.warning("Failed to process MCP response: %s, falling back to direct service", e)
         else:
             logger.warning("MCP call failed, falling back to direct EHR service")
     
@@ -376,7 +482,7 @@ def call_evidence_agent(state: CarePlanState) -> CarePlanState:
         response = requests.post(
             f"{EVIDENCE_AGENT_URL.rstrip('/')}/agents/evidence/search",
             json=payload,
-            timeout=10,
+            timeout=60,  # Increased from 10s to 60s to handle MCP retry + fallback + LLM grading
         )
         response.raise_for_status()
     except requests.RequestException as exc:
