@@ -13,13 +13,6 @@ public type Trial record {
     string? eligibilitySummary?;
 };
 
-// Service information structure
-public type ServiceInfo record {
-    string name;
-    string description;
-    string[] capabilities;
-};
-
 // Response structure for Evidence Agent
 public type TrialMetadata record {
     string nctId;

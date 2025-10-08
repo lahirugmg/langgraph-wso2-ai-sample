@@ -12,24 +12,6 @@ function init() {
     }
 }
 
-// Services endpoint
-service /services on httpListener {
-    // GET /services - Get service capabilities
-    resource function get .() returns ServiceInfo {
-        ServiceInfo serviceInfo = {
-            name: "Clinical Research Services API",
-            description: "REST API for managing clinical trials used by the evidence and care-plan agents",
-            capabilities: [
-                "List all clinical trials",
-                "Create new clinical trials", 
-                "Retrieve individual trial details",
-                "Service metadata"
-            ]
-        };
-        return serviceInfo;
-    }
-}
-
 // Trial Registry Service
 service /trials on httpListener {
     
