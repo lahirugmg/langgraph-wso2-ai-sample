@@ -27,6 +27,15 @@ if not logger.handlers:
     logger.addHandler(handler)
 logger.setLevel(logging.INFO)
 
+def _strip_quotes(value: Optional[str]) -> Optional[str]:
+    """Strip quotes from environment variable values."""
+    if value is None:
+        return None
+    value = value.strip()
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+        return value[1:-1]
+    return value
+
 EHR_SERVICE_URL = os.environ.get("EHR_SERVICE_URL", "http://127.0.0.1:8001")
 EVIDENCE_AGENT_URL = os.environ.get("EVIDENCE_AGENT_URL", "http://127.0.0.1:8003")
 DEFAULT_GEO = {
@@ -49,8 +58,17 @@ API_MANAGER_CHAT_ENDPOINT = os.environ.get(
     f"{API_MANAGER_BASE_URL}/healthcare/openai-api/v1.0/chat/completions" if API_MANAGER_BASE_URL else None
 )
 
-# Cache for access token
+# MCP Gateway configuration
+MCP_GATEWAY_CLIENT_ID = _strip_quotes(os.environ.get("MCP_GATEWAY_CLIENT_ID"))
+MCP_GATEWAY_CLIENT_SECRET = _strip_quotes(os.environ.get("MCP_GATEWAY_CLIENT_SECRET"))
+MCP_GATEWAY_TOKEN_ENDPOINT = _strip_quotes(os.environ.get("MCP_GATEWAY_TOKEN_ENDPOINT"))
+
+# MCP Server URLs
+EHR_MCP_URL = _strip_quotes(os.environ.get("EHR_MCP_URL"))
+
+# Cache for access tokens
 _access_token_cache = {"token": None, "expires_at": 0}
+_mcp_access_token_cache = {"token": None, "expires_at": 0}
 
 
 class CarePlanRequestState(TypedDict):
@@ -179,6 +197,96 @@ def _call_llm(messages: List[dict[str, str]]) -> Optional[str]:
         return None
 
 
+def _get_mcp_access_token() -> Optional[str]:
+    """Obtain OAuth2 access token for MCP gateway using client credentials flow."""
+    if not all([MCP_GATEWAY_CLIENT_ID, MCP_GATEWAY_CLIENT_SECRET, MCP_GATEWAY_TOKEN_ENDPOINT]):
+        logger.info("MCP Gateway credentials not configured; skipping MCP authentication")
+        return None
+    
+    # Check if cached token is still valid (with 60 second buffer)
+    import time
+    if _mcp_access_token_cache["token"] and _mcp_access_token_cache["expires_at"] > time.time() + 60:
+        logger.info("Using cached MCP access token (valid for %d more seconds)", 
+                   int(_mcp_access_token_cache["expires_at"] - time.time()))
+        return _mcp_access_token_cache["token"]
+    
+    logger.info("Requesting new MCP access token from endpoint: %s", MCP_GATEWAY_TOKEN_ENDPOINT)
+    
+    try:
+        response = requests.post(
+            MCP_GATEWAY_TOKEN_ENDPOINT,
+            data={
+                "grant_type": "client_credentials",
+                "client_id": MCP_GATEWAY_CLIENT_ID,
+                "client_secret": MCP_GATEWAY_CLIENT_SECRET,
+            },
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+            timeout=10,
+        )
+        
+        logger.info("MCP token endpoint responded with status: %d", response.status_code)
+        response.raise_for_status()
+        token_data = response.json()
+        access_token = token_data["access_token"]
+        expires_in = token_data.get("expires_in", 3600)
+        
+        # Cache the token
+        _mcp_access_token_cache["token"] = access_token
+        _mcp_access_token_cache["expires_at"] = time.time() + expires_in
+        
+        logger.info("✓ MCP access token obtained successfully (expires in %d seconds)", expires_in)
+        return access_token
+    except (requests.RequestException, KeyError, ValueError) as exc:
+        logger.exception("✗ Failed to obtain MCP access token: %s", exc)
+        return None
+
+
+def _call_mcp_tool(server_url: str, tool_name: str, arguments: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Call an MCP tool."""
+    access_token = _get_mcp_access_token()
+    if not access_token:
+        logger.error("Failed to obtain MCP access token")
+        return None
+    
+    payload = {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "tools/call",
+        "params": {
+            "name": tool_name,
+            "arguments": arguments
+        }
+    }
+    
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "Content-Type": "application/json",
+    }
+    
+    try:
+        logger.info("Calling MCP tool '%s' at %s", tool_name, server_url)
+        response = requests.post(
+            server_url,
+            headers=headers,
+            json=payload,
+            timeout=30,
+        )
+        logger.info("MCP tool '%s' responded with status: %d", tool_name, response.status_code)
+        response.raise_for_status()
+        result = response.json()
+        
+        if "error" in result:
+            logger.error("MCP tool error: %s", result["error"])
+            return None
+        
+        logger.info("✓ MCP tool '%s' executed successfully", tool_name)
+        return result.get("result")
+        
+    except Exception as e:
+        logger.error("✗ MCP tool call failed: %s", e)
+        return None
+
+
 def _extract_json_block(text: str) -> Optional[Dict[str, Any]]:
     try:
         return json.loads(text)
@@ -196,6 +304,33 @@ def _extract_json_block(text: str) -> Optional[Dict[str, Any]]:
 def fetch_patient_summary(state: CarePlanState) -> CarePlanState:
     patient_id = state["request"]["patient_id"]
     logger.info("Fetching EHR summary for patient_id=%s", patient_id)
+    
+    # Try MCP first if configured
+    if EHR_MCP_URL:
+        logger.info("Using EHR MCP server: %s", EHR_MCP_URL)
+        mcp_result = _call_mcp_tool(EHR_MCP_URL, "getPatientsIdSummary", {"id": patient_id})
+        
+        if mcp_result and not mcp_result.get("isError", True):
+            # Extract summary from MCP response
+            content = mcp_result.get("content", [])
+            if content and isinstance(content, list) and len(content) > 0:
+                text_content = content[0].get("text", "")
+                try:
+                    summary = json.loads(text_content)
+                    logger.info(
+                        "✓ EHR summary received via MCP for patient_id=%s (last_a1c=%s, last_egfr=%s)",
+                        patient_id,
+                        summary.get("last_a1c"),
+                        summary.get("last_egfr"),
+                    )
+                    return {"patient_summary": summary}
+                except json.JSONDecodeError:
+                    logger.warning("Failed to parse MCP response as JSON, falling back to direct service")
+        else:
+            logger.warning("MCP call failed, falling back to direct EHR service")
+    
+    # Fallback to direct REST call
+    logger.info("Using direct EHR service: %s", EHR_SERVICE_URL)
     try:
         response = requests.get(
             f"{EHR_SERVICE_URL.rstrip('/')}/patients/{patient_id}/summary", timeout=5

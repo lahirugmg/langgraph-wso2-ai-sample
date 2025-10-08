@@ -75,6 +75,163 @@ _access_token_cache = {"token": None, "expires_at": 0}
 _mcp_access_token_cache = {"token": None, "expires_at": 0}
 
 
+def _get_mcp_access_token() -> Optional[str]:
+    """Obtain OAuth2 access token for MCP gateway using client credentials flow."""
+    if not all([MCP_GATEWAY_CLIENT_ID, MCP_GATEWAY_CLIENT_SECRET, MCP_GATEWAY_TOKEN_ENDPOINT]):
+        logger.info("MCP Gateway credentials not configured; skipping MCP authentication")
+        return None
+    
+    # Check if cached token is still valid (with 60 second buffer)
+    import time
+    if _mcp_access_token_cache["token"] and _mcp_access_token_cache["expires_at"] > time.time() + 60:
+        logger.info("Using cached MCP access token (valid for %d more seconds)", 
+                   int(_mcp_access_token_cache["expires_at"] - time.time()))
+        return _mcp_access_token_cache["token"]
+    
+    logger.info("Requesting new MCP access token from endpoint: %s", MCP_GATEWAY_TOKEN_ENDPOINT)
+    logger.info("Using MCP client_id: %s", MCP_GATEWAY_CLIENT_ID[:10] + "..." if len(MCP_GATEWAY_CLIENT_ID) > 10 else MCP_GATEWAY_CLIENT_ID)
+    
+    try:
+        data = {
+            "grant_type": "client_credentials",
+            "client_id": MCP_GATEWAY_CLIENT_ID,
+            "client_secret": MCP_GATEWAY_CLIENT_SECRET,
+        }
+        if MCP_GATEWAY_SCOPE:
+            data["scope"] = MCP_GATEWAY_SCOPE
+            
+        response = requests.post(
+            MCP_GATEWAY_TOKEN_ENDPOINT,
+            data=data,
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+            timeout=10,
+        )
+        
+        logger.info("MCP token endpoint responded with status: %d", response.status_code)
+        
+        response.raise_for_status()
+        token_data = response.json()
+        access_token = token_data["access_token"]
+        expires_in = token_data.get("expires_in", 3600)
+        
+        # Cache the token
+        _mcp_access_token_cache["token"] = access_token
+        _mcp_access_token_cache["expires_at"] = time.time() + expires_in
+        
+        logger.info("✓ MCP access token obtained successfully (expires in %d seconds)", expires_in)
+        logger.info("✓ MCP token cached for future requests")
+        return access_token
+    except (requests.RequestException, KeyError, ValueError) as exc:
+        logger.exception("✗ Failed to obtain MCP access token: %s", exc)
+        return None
+
+
+def _call_mcp_tool(mcp_url: str, tool_name: str, arguments: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Call an MCP tool with given arguments."""
+    access_token = _get_mcp_access_token()
+    if not access_token:
+        logger.error("✗ Failed to obtain MCP access token; skipping MCP tool call")
+        return None
+    
+    logger.info("Calling MCP tool '%s' at %s", tool_name, mcp_url)
+    logger.info("  Arguments: %s", arguments)
+    
+    payload = {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "tools/call",
+        "params": {
+            "name": tool_name,
+            "arguments": arguments
+        }
+    }
+    
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "Content-Type": "application/json",
+    }
+    
+    try:
+        logger.info("Sending MCP tool request...")
+        response = requests.post(
+            mcp_url,
+            headers=headers,
+            json=payload,
+            timeout=30,
+        )
+        
+        logger.info("MCP tool responded with status: %d", response.status_code)
+        
+        response.raise_for_status()
+        data = response.json()
+        
+        if "error" in data:
+            logger.error("✗ MCP tool error: %s", data["error"])
+            return None
+        
+        result = data.get("result")
+        logger.info("✓ MCP tool '%s' executed successfully", tool_name)
+        return result
+        
+    except requests.HTTPError as exc:
+        logger.error("✗ MCP tool HTTP error: status=%d, response=%s", 
+                    response.status_code, 
+                    response.text[:200] if response.text else "empty")
+        logger.exception("✗ MCP tool call failed: %s", exc)
+        return None
+    except (requests.RequestException, KeyError, ValueError) as exc:
+        logger.exception("✗ MCP tool call failed: %s", exc)
+        return None
+
+
+def _list_mcp_tools(mcp_url: str) -> Optional[List[Dict[str, Any]]]:
+    """List available tools from an MCP server."""
+    access_token = _get_mcp_access_token()
+    if not access_token:
+        logger.error("✗ Failed to obtain MCP access token; skipping MCP tools list")
+        return None
+    
+    logger.info("Listing MCP tools from %s", mcp_url)
+    
+    payload = {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "tools/list",
+        "params": {}
+    }
+    
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "Content-Type": "application/json",
+    }
+    
+    try:
+        response = requests.post(
+            mcp_url,
+            headers=headers,
+            json=payload,
+            timeout=10,
+        )
+        
+        response.raise_for_status()
+        data = response.json()
+        
+        if "error" in data:
+            logger.error("✗ MCP tools list error: %s", data["error"])
+            return None
+        
+        tools = data.get("result", {}).get("tools", [])
+        logger.info("✓ Found %d MCP tools", len(tools))
+        for tool in tools:
+            logger.info("  - %s: %s", tool.get("name", "Unknown"), tool.get("description", "No description"))
+        
+        return tools
+        
+    except (requests.RequestException, KeyError, ValueError) as exc:
+        logger.exception("✗ Failed to list MCP tools: %s", exc)
+        return None
+
+
 class GeoContext(TypedDict):
     lat: float
     lon: float
@@ -226,6 +383,34 @@ def _get_mcp_access_token() -> Optional[str]:
         return None
 
 
+def _log_mcp_request(method: str, url: str, headers: Optional[dict[str, str]], payload: Optional[Any]) -> None:
+    """Emit a structured log entry for outgoing MCP calls without leaking secrets."""
+    redacted_headers: dict[str, Any] = {}
+    for key, value in (headers or {}).items():
+        if isinstance(value, str) and key.lower() == "authorization":
+            token_len = len(value)
+            redacted_headers[key] = f"Bearer <redacted len={token_len}>"
+        else:
+            redacted_headers[key] = value
+
+    if payload is None:
+        payload_preview = None
+    elif isinstance(payload, (dict, list)):
+        serialized = json.dumps(payload)
+        payload_preview = serialized[:500] + ("..." if len(serialized) > 500 else "")
+    else:
+        text = str(payload)
+        payload_preview = text[:500] + ("..." if len(text) > 500 else "")
+
+    logger.info(
+        "MCP request prepared: method=%s url=%s headers=%s payload=%s",
+        method,
+        url,
+        redacted_headers,
+        payload_preview,
+    )
+
+
 def _call_llm(messages: List[dict[str, str]]) -> Optional[str]:
     """Call a chat-completions style LLM endpoint if credentials exist.
 
@@ -309,67 +494,40 @@ def fetch_trials(state: EvidenceState) -> EvidenceState:
         context["egfr"],
         context.get("geo", {}).get("radius_km"),
     )
-    base_url = TRIAL_REGISTRY_MCP_URL or TRIAL_REGISTRY_URL
-    headers: Optional[dict[str, str]] = None
-
+    
+    trials: List[dict] = []
+    
+    # Try MCP first if configured
     if TRIAL_REGISTRY_MCP_URL:
-        logger.info("Using Trial Registry MCP proxy: %s", TRIAL_REGISTRY_MCP_URL)
-        token = _get_mcp_access_token()
-        if not token:
-            raise RuntimeError("Failed to obtain MCP gateway token for Trial Registry service")
-        logger.info(
-            "Obtained MCP gateway token (length=%s)",
-            len(token),
-        )
-        headers = {"Authorization": f"Bearer {token}"}
-    else:
-        logger.info("Using direct Trial Registry service: %s", TRIAL_REGISTRY_URL)
-
-    url = f"{base_url.rstrip('/')}/trials"
-    logger.info(
-        "Invoking Trial Registry endpoint via %s: %s",
-        "MCP gateway" if TRIAL_REGISTRY_MCP_URL else "direct service",
-        url,
-    )
-    try:
-        response = requests.get(
-            url,
-            headers=headers,
-            timeout=10,
-        )
-        logger.info(
-            "Trial Registry endpoint responded: status=%s via %s",
-            response.status_code,
-            "MCP gateway" if TRIAL_REGISTRY_MCP_URL else "direct service",
-        )
-        response.raise_for_status()
-    except requests.HTTPError as exc:
-        status = exc.response.status_code if exc.response is not None else "unknown"
-        body = exc.response.text[:200] if exc.response is not None and exc.response.text else ""
-        logger.error(
-            "Trial Registry MCP call failed: status=%s response=%s",
-            status,
-            body,
-        )
-        if TRIAL_REGISTRY_MCP_URL and TRIAL_REGISTRY_URL and base_url == TRIAL_REGISTRY_MCP_URL:
-            fallback_url = f"{TRIAL_REGISTRY_URL.rstrip('/')}/trials"
-            logger.info("Attempting fallback to direct Trial Registry service: %s", fallback_url)
-            try:
-                response = requests.get(fallback_url, timeout=5)
-                logger.info(
-                    "Trial Registry fallback responded: status=%s",
-                    response.status_code,
-                )
-                response.raise_for_status()
-            except requests.RequestException as fallback_exc:
-                raise RuntimeError("Failed to reach Trial Registry service via MCP and direct fallback") from fallback_exc
+        logger.info("Using Trial Registry MCP server: %s", TRIAL_REGISTRY_MCP_URL)
+        mcp_result = _call_mcp_tool(TRIAL_REGISTRY_MCP_URL, "getTrials", {})
+        
+        if mcp_result and not mcp_result.get("isError", True):
+            # Extract trials from MCP response
+            content = mcp_result.get("content", [])
+            if content and isinstance(content, list) and len(content) > 0:
+                text_content = content[0].get("text", "")
+                try:
+                    trials = json.loads(text_content)
+                    logger.info("✓ Retrieved %d trials via MCP", len(trials))
+                except json.JSONDecodeError:
+                    logger.warning("Failed to parse MCP response as JSON, falling back to direct service")
         else:
-            raise RuntimeError("Failed to reach Trial Registry service via MCP") from exc
-    except requests.RequestException as exc:
-        logger.exception("Trial Registry request failed: %s", exc)
-        raise RuntimeError("Failed to reach Trial Registry service") from exc
-
-    trials: List[dict] = response.json()
+            logger.warning("MCP call failed or returned no data, falling back to direct Trial Registry service")
+    
+    # Fallback to direct REST call if MCP failed or not configured
+    if not trials and TRIAL_REGISTRY_URL:
+        logger.info("Using direct Trial Registry service: %s", TRIAL_REGISTRY_URL)
+        try:
+            url = f"{TRIAL_REGISTRY_URL.rstrip('/')}/trials"
+            response = requests.get(url, timeout=10)
+            logger.info("Trial Registry endpoint responded: status=%s", response.status_code)
+            response.raise_for_status()
+            trials = response.json()
+            logger.info("✓ Retrieved %d trials via direct service", len(trials))
+        except requests.RequestException as exc:
+            logger.exception("Trial Registry request failed: %s", exc)
+            raise RuntimeError("Failed to reach Trial Registry service") from exc
     diagnosis = context["diagnosis"].lower()
     egfr = context["egfr"]
     geo = context.get("geo")
