@@ -55,7 +55,7 @@ API_MANAGER_TOKEN_ENDPOINT = os.environ.get(
 )
 API_MANAGER_CHAT_ENDPOINT = os.environ.get(
     "API_MANAGER_CHAT_ENDPOINT",
-    f"{API_MANAGER_BASE_URL}/healthcare/openai-api/v1.0/chat/completions" if API_MANAGER_BASE_URL else None
+    f"{API_MANAGER_BASE_URL}/chat/completions" if API_MANAGER_BASE_URL else None
 )
 
 # MCP Gateway configuration
@@ -117,7 +117,7 @@ def _get_access_token() -> Optional[str]:
                 "client_secret": API_MANAGER_CLIENT_SECRET,
             },
             headers={"Content-Type": "application/x-www-form-urlencoded"},
-            timeout=10,
+            timeout=180,
         )
         
         logger.info("Token endpoint responded with status: %d", response.status_code)
@@ -174,7 +174,7 @@ def _call_llm(messages: List[dict[str, str]]) -> Optional[str]:
                 "Content-Type": "application/json",
             },
             json=payload,
-            timeout=45,
+            timeout=180,
         )
         
         logger.info("LLM API responded with status: %d", response.status_code)
@@ -221,7 +221,7 @@ def _get_mcp_access_token() -> Optional[str]:
                 "client_secret": MCP_GATEWAY_CLIENT_SECRET,
             },
             headers={"Content-Type": "application/x-www-form-urlencoded"},
-            timeout=10,
+            timeout=180,
         )
         
         logger.info("MCP token endpoint responded with status: %d", response.status_code)
@@ -281,7 +281,7 @@ def _call_mcp_tool(server_url: str, tool_name: str, arguments: Dict[str, Any]) -
             server_url,
             headers=actual_headers,
             json=payload,
-            timeout=30,
+            timeout=180,
         )
         
         logger.info("MCP RESPONSE - Status Code: %d", response.status_code)
@@ -445,8 +445,7 @@ def fetch_patient_summary(state: CarePlanState) -> CarePlanState:
         raise RuntimeError("EHR_MCP_URL is not configured")
     
     logger.info("🌐 EHR MCP Endpoint: %s", EHR_MCP_URL)
-    mcp_result = _call_mcp_tool(EHR_MCP_URL, "getPatientsIdSummary", {"id": patient_id})
-    
+    mcp_result = _call_mcp_tool(EHR_MCP_URL, "getPatientsIdSummary", {"id": patient_id})    
     if not mcp_result:
         raise RuntimeError(f"MCP call failed for patient {patient_id}")
     
@@ -534,7 +533,7 @@ def call_evidence_agent(state: CarePlanState) -> CarePlanState:
         response = requests.post(
             f"{EVIDENCE_AGENT_URL.rstrip('/')}/agents/evidence/search",
             json=payload,
-            timeout=60,  # MCP call may take time for Trial Registry retrieval + LLM grading
+            timeout=180,  # MCP call may take time for Trial Registry retrieval + LLM grading
         )
         response.raise_for_status()
     except requests.RequestException as exc:

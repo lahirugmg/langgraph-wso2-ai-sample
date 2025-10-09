@@ -7,6 +7,9 @@ frontend/.next/
 *.py[cod]
 *.pyc
 
+# Python virtual environment
+venv/
+
 # Environment files
 *.env
 *.env.local

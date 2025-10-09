@@ -57,7 +57,7 @@ API_MANAGER_TOKEN_ENDPOINT = _strip_quotes(
 API_MANAGER_CHAT_ENDPOINT = _strip_quotes(
     os.environ.get(
         "API_MANAGER_CHAT_ENDPOINT",
-        f"{API_MANAGER_BASE_URL}/healthcare/openai-api/v1.0/chat/completions" if API_MANAGER_BASE_URL else None
+        f"{API_MANAGER_BASE_URL}/chat/completions" if API_MANAGER_BASE_URL else None
     )
 ) or None
 
@@ -104,7 +104,7 @@ def _get_mcp_access_token() -> Optional[str]:
             MCP_GATEWAY_TOKEN_ENDPOINT,
             data=data,
             headers={"Content-Type": "application/x-www-form-urlencoded"},
-            timeout=10,
+            timeout=180,
         )
         
         logger.info("MCP token endpoint responded with status: %d", response.status_code)
@@ -166,7 +166,7 @@ def _call_mcp_tool(mcp_url: str, tool_name: str, arguments: Dict[str, Any]) -> O
             mcp_url,
             headers=actual_headers,
             json=payload,
-            timeout=30,
+            timeout=180,
         )
         
         logger.info("MCP RESPONSE - Status Code: %d", response.status_code)
@@ -231,7 +231,7 @@ def _list_mcp_tools(mcp_url: str) -> Optional[List[Dict[str, Any]]]:
             mcp_url,
             headers=headers,
             json=payload,
-            timeout=10,
+            timeout=180,
         )
         
         response.raise_for_status()
@@ -330,7 +330,7 @@ def _get_access_token() -> Optional[str]:
                 "client_secret": API_MANAGER_CLIENT_SECRET,
             },
             headers={"Content-Type": "application/x-www-form-urlencoded"},
-            timeout=10,
+            timeout=180,
         )
         
         logger.info("Token endpoint responded with status: %d", response.status_code)
@@ -387,7 +387,7 @@ def _get_mcp_access_token() -> Optional[str]:
             MCP_GATEWAY_TOKEN_ENDPOINT,
             data=data,
             headers={"Content-Type": "application/x-www-form-urlencoded"},
-            timeout=10,
+            timeout=180,
         )
         logger.info("MCP gateway token response status: %d", response.status_code)
         response.raise_for_status()
@@ -470,7 +470,7 @@ def _call_llm(messages: List[dict[str, str]]) -> Optional[str]:
             API_MANAGER_CHAT_ENDPOINT,
             headers=headers,
             json=payload,
-            timeout=30,
+            timeout=180,
         )
         
         logger.info("LLM API responded with status: %d", response.status_code)
