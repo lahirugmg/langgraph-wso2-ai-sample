@@ -522,7 +522,6 @@ def _call_llm(messages: List[dict[str, str]]) -> Optional[str]:
     payload = {
         "model": OPENAI_MODEL,
         "messages": messages,
-        "temperature": 0.1,
         "response_format": {"type": "json_object"},
     }
 
