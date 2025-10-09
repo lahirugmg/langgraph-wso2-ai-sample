@@ -35,9 +35,9 @@ ensure_python_requirements() {
   local req_path="$2"
 
   if [[ -f "$req_path" ]]; then
-    echo "Installing Python dependencies for $service_name (logging to $log_file)"
-    pip install -r "$req_path" >> "$log_file" 2>&1 || {
-      echo "Failed installing dependencies for $service_name. Check $log_file" >&2
+    echo "Installing Python dependencies for $service_name..."
+    pip install -r "$req_path" > /dev/null 2>&1 || {
+      echo "Failed installing dependencies for $service_name" >&2
       exit 1
     }
   fi
@@ -45,19 +45,12 @@ ensure_python_requirements() {
 
 setup_venv
 
-ensure_python_requirements "trial-registry" "$ROOT_DIR/trial-registry-backend/requirements.txt"
-ensure_python_requirements "ehr" "$ROOT_DIR/ehr-backend/requirements.txt"
+# Only install dependencies for the agent services (backends are now MCP-based)
 ensure_python_requirements "evidence-agent" "$ROOT_DIR/evidence-agent/requirements.txt"
 ensure_python_requirements "care-plan-agent" "$ROOT_DIR/care-plan-agent/requirements.txt"
 
-start_process "trial-registry-service" \
-  "$VENV_DIR/bin/uvicorn" app:app --app-dir "$ROOT_DIR/trial-registry-backend" --host 0.0.0.0 --port 8002
-
-start_process "ehr-service" \
-  "$VENV_DIR/bin/uvicorn" app:app --app-dir "$ROOT_DIR/ehr-backend" --host 0.0.0.0 --port 8001
-
-# Allow services a moment to come online before agents make requests.
-sleep 2
+# Note: EHR and Trial Registry services are now provided via MCP (Model Context Protocol)
+# No need to start Python backend services - agents communicate directly with MCP servers
 
 start_process "evidence-agent-service" \
   "$VENV_DIR/bin/uvicorn" evidence_agent:app --app-dir "$ROOT_DIR/evidence-agent" --host 0.0.0.0 --port 8003
