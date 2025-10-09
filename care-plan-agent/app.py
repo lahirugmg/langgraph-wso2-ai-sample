@@ -47,6 +47,7 @@ OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
 
 # API Manager OAuth2 configuration
 API_MANAGER_BASE_URL = os.environ.get("API_MANAGER_BASE_URL")
+API_MANAGER_OPENAI_PROXY_URL = os.environ.get("API_MANAGER_OPENAI_PROXY_URL")
 API_MANAGER_CLIENT_ID = os.environ.get("API_MANAGER_CLIENT_ID")
 API_MANAGER_CLIENT_SECRET = os.environ.get("API_MANAGER_CLIENT_SECRET")
 API_MANAGER_TOKEN_ENDPOINT = os.environ.get(
@@ -55,7 +56,7 @@ API_MANAGER_TOKEN_ENDPOINT = os.environ.get(
 )
 API_MANAGER_CHAT_ENDPOINT = os.environ.get(
     "API_MANAGER_CHAT_ENDPOINT",
-    f"{API_MANAGER_BASE_URL}/chat/completions" if API_MANAGER_BASE_URL else None
+    f"{API_MANAGER_OPENAI_PROXY_URL}/chat/completions" if API_MANAGER_OPENAI_PROXY_URL else None
 )
 
 # MCP Gateway configuration

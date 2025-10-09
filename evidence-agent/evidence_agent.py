@@ -46,6 +46,7 @@ OPENAI_MODEL = _strip_quotes(os.environ.get("OPENAI_MODEL")) or "gpt-4o-mini"
 
 # API Manager OAuth2 configuration
 API_MANAGER_BASE_URL = _strip_quotes(os.environ.get("API_MANAGER_BASE_URL"))
+API_MANAGER_OPENAI_PROXY_URL = _strip_quotes(os.environ.get("API_MANAGER_OPENAI_PROXY_URL"))
 API_MANAGER_CLIENT_ID = _strip_quotes(os.environ.get("API_MANAGER_CLIENT_ID"))
 API_MANAGER_CLIENT_SECRET = _strip_quotes(os.environ.get("API_MANAGER_CLIENT_SECRET"))
 API_MANAGER_TOKEN_ENDPOINT = _strip_quotes(
@@ -57,7 +58,7 @@ API_MANAGER_TOKEN_ENDPOINT = _strip_quotes(
 API_MANAGER_CHAT_ENDPOINT = _strip_quotes(
     os.environ.get(
         "API_MANAGER_CHAT_ENDPOINT",
-        f"{API_MANAGER_BASE_URL}/chat/completions" if API_MANAGER_BASE_URL else None
+        f"{API_MANAGER_OPENAI_PROXY_URL}/chat/completions" if API_MANAGER_OPENAI_PROXY_URL else None
     )
 ) or None
 
