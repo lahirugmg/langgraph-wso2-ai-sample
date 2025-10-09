@@ -74,6 +74,11 @@ TRIAL_REGISTRY_MCP_URL = _strip_quotes(os.environ.get("TRIAL_REGISTRY_MCP_URL"))
 _access_token_cache = {"token": None, "expires_at": 0}
 _mcp_access_token_cache = {"token": None, "expires_at": 0}
 
+# Global cache for MCP tools list (cached for 5 minutes)
+_mcp_tools_cache = {
+    "trial_registry": {"tools": [], "timestamp": 0}
+}
+
 
 def _get_mcp_access_token() -> Optional[str]:
     """Obtain OAuth2 access token for MCP gateway using client credentials flow."""
@@ -123,6 +128,110 @@ def _get_mcp_access_token() -> Optional[str]:
         return access_token
     except (requests.RequestException, KeyError, ValueError) as exc:
         logger.exception("✗ Failed to obtain MCP access token: %s", exc)
+        return None
+
+
+def _list_mcp_tools(server_url: str, cache_key: str) -> List[Dict[str, Any]]:
+    """List available tools from MCP server with caching."""
+    import time
+    
+    # Check cache (valid for 5 minutes)
+    cache_entry = _mcp_tools_cache.get(cache_key, {"tools": [], "timestamp": 0})
+    if cache_entry["tools"] and (time.time() - cache_entry["timestamp"]) < 300:
+        logger.info("📦 Using cached tools list for %s (%d tools)", cache_key, len(cache_entry["tools"]))
+        return cache_entry["tools"]
+    
+    access_token = _get_mcp_access_token()
+    if not access_token:
+        logger.error("Failed to obtain MCP access token for listing tools")
+        return []
+    
+    payload = {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "tools/list"
+    }
+    
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "Content-Type": "application/json",
+    }
+    
+    try:
+        logger.info("🔍 Discovering available MCP tools from %s...", server_url)
+        response = requests.post(
+            server_url,
+            headers=headers,
+            json=payload,
+            timeout=10,
+        )
+        response.raise_for_status()
+        result = response.json()
+        
+        if "error" in result:
+            logger.error("MCP tools/list error: %s", result["error"])
+            return []
+        
+        tools = result.get("result", {}).get("tools", [])
+        logger.info("✅ Discovered %d MCP tools from %s:", len(tools), cache_key)
+        for tool in tools:
+            logger.info("   • %s - %s", tool.get("name"), tool.get("description", "No description"))
+        
+        # Update cache
+        _mcp_tools_cache[cache_key] = {
+            "tools": tools,
+            "timestamp": time.time()
+        }
+        
+        return tools
+    except Exception as e:
+        logger.error("Failed to list MCP tools: %s", e)
+        return []
+
+
+def _find_best_mcp_tool(tools: List[Dict[str, Any]], purpose: str, keywords: List[str]) -> Optional[Dict[str, Any]]:
+    """
+    Intelligently find the best matching MCP tool based on purpose and keywords.
+    
+    Args:
+        tools: List of available MCP tools
+        purpose: Human-readable description of what we want to do
+        keywords: List of keywords to search for in tool name/description
+    
+    Returns:
+        Best matching tool dict or None
+    """
+    logger.info("🤔 Selecting best tool for purpose: '%s'", purpose)
+    logger.info("   Search keywords: %s", ", ".join(keywords))
+    
+    best_match = None
+    best_score = 0
+    
+    for tool in tools:
+        name = tool.get("name", "").lower()
+        description = tool.get("description", "").lower()
+        score = 0
+        
+        # Score based on keyword matches
+        for keyword in keywords:
+            keyword_lower = keyword.lower()
+            if keyword_lower in name:
+                score += 10  # Name match is highest priority
+            if keyword_lower in description:
+                score += 5   # Description match is secondary
+        
+        if score > best_score:
+            best_score = score
+            best_match = tool
+            logger.info("   📊 Candidate: '%s' (score: %d)", name, score)
+    
+    if best_match:
+        logger.info("✅ Selected tool: '%s' - %s", 
+                   best_match.get("name"), 
+                   best_match.get("description", ""))
+        return best_match
+    else:
+        logger.warning("⚠️  No matching tool found for purpose: '%s'", purpose)
         return None
 
 
@@ -202,54 +311,6 @@ def _call_mcp_tool(mcp_url: str, tool_name: str, arguments: Dict[str, Any]) -> O
     except (requests.RequestException, KeyError, ValueError) as exc:
         logger.error("✗ MCP tool call exception: %s", exc)
         logger.exception("Full exception traceback:")
-        return None
-
-
-def _list_mcp_tools(mcp_url: str) -> Optional[List[Dict[str, Any]]]:
-    """List available tools from an MCP server."""
-    access_token = _get_mcp_access_token()
-    if not access_token:
-        logger.error("✗ Failed to obtain MCP access token; skipping MCP tools list")
-        return None
-    
-    logger.info("Listing MCP tools from %s", mcp_url)
-    
-    payload = {
-        "jsonrpc": "2.0",
-        "id": 1,
-        "method": "tools/list",
-        "params": {}
-    }
-    
-    headers = {
-        "Authorization": f"Bearer {access_token}",
-        "Content-Type": "application/json",
-    }
-    
-    try:
-        response = requests.post(
-            mcp_url,
-            headers=headers,
-            json=payload,
-            timeout=180,
-        )
-        
-        response.raise_for_status()
-        data = response.json()
-        
-        if "error" in data:
-            logger.error("✗ MCP tools list error: %s", data["error"])
-            return None
-        
-        tools = data.get("result", {}).get("tools", [])
-        logger.info("✓ Found %d MCP tools", len(tools))
-        for tool in tools:
-            logger.info("  - %s: %s", tool.get("name", "Unknown"), tool.get("description", "No description"))
-        
-        return tools
-        
-    except (requests.RequestException, KeyError, ValueError) as exc:
-        logger.exception("✗ Failed to list MCP tools: %s", exc)
         return None
 
 
@@ -520,8 +581,50 @@ def fetch_trials(state: EvidenceState) -> EvidenceState:
         raise RuntimeError("TRIAL_REGISTRY_MCP_URL is not configured")
     
     logger.info("Using Trial Registry MCP server: %s", TRIAL_REGISTRY_MCP_URL)
-    # Note: Trial Registry MCP tool is named "get" not "getTrials"
-    mcp_result = _call_mcp_tool(TRIAL_REGISTRY_MCP_URL, "get", {})
+    
+    # Step 1: Discover available tools
+    available_tools = _list_mcp_tools(TRIAL_REGISTRY_MCP_URL, "trial_registry")
+    if not available_tools:
+        raise RuntimeError("Failed to discover Trial Registry MCP tools")
+    
+    # Step 2: Filter tools - we want one that doesn't require parameters (gets all trials, not a single trial)
+    # Exclude tools that require specific IDs or parameters
+    simple_tools = []
+    for tool in available_tools:
+        input_schema = tool.get("inputSchema", {})
+        required_params = input_schema.get("required", [])
+        # Accept tools with no required parameters, or only optional parameters
+        if not required_params:
+            simple_tools.append(tool)
+            logger.info("   ✓ Candidate: '%s' (no required params)", tool.get("name"))
+        else:
+            logger.info("   ✗ Skipping: '%s' (requires: %s)", tool.get("name"), ", ".join(required_params))
+    
+    if not simple_tools:
+        logger.warning("No tools without required parameters found, using all tools")
+        simple_tools = available_tools
+    
+    # Step 3: Find best tool from filtered list
+    best_tool = _find_best_mcp_tool(
+        simple_tools,
+        purpose="Retrieve complete list of all clinical trials for matching patients",
+        keywords=["get", "trials", "list", "all"]
+    )
+    
+    if not best_tool:
+        raise RuntimeError("No suitable MCP tool found for fetching clinical trials")
+    
+    tool_name = best_tool["name"]
+    logger.info("🔧 SELECTED TOOL: '%s'", tool_name)
+    logger.info("   Description: %s", best_tool.get("description", "N/A"))
+    logger.info("   WHY THIS TOOL?: Best match for retrieving all clinical trials data")
+    
+    # Step 4: Build arguments (should be empty for list-all tools)
+    arguments = {}
+    logger.info("   Parameters: None (retrieving all trials)")
+    
+    # Step 4: Call the selected tool
+    mcp_result = _call_mcp_tool(TRIAL_REGISTRY_MCP_URL, tool_name, arguments)
     
     if not mcp_result:
         raise RuntimeError("MCP call failed for Trial Registry")
