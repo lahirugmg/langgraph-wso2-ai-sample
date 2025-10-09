@@ -429,12 +429,22 @@ def _transform_mcp_to_python_format(mcp_data: Dict[str, Any]) -> Dict[str, Any]:
 
 def fetch_patient_summary(state: CarePlanState) -> CarePlanState:
     patient_id = state["request"]["patient_id"]
-    logger.info("Fetching EHR summary for patient_id=%s via MCP", patient_id)
+    logger.info("=" * 100)
+    logger.info("🔍 STEP 1: FETCH PATIENT SUMMARY")
+    logger.info("=" * 100)
+    logger.info("📋 REASON: Need comprehensive patient data (demographics, conditions, labs, medications)")
+    logger.info("           to make informed clinical decisions about care plan recommendations")
+    logger.info("👤 Patient ID: %s", patient_id)
+    logger.info("🔧 TOOL CHOICE: Using MCP (Model Context Protocol) tool 'getPatientsIdSummary'")
+    logger.info("   WHY MCP?: Standardized protocol for secure, structured clinical data access")
+    logger.info("   EXPECTED DATA: demographics, problems/diagnoses, medications, recent lab values")
+    logger.info("-" * 100)
     
     if not EHR_MCP_URL:
+        logger.error("❌ CRITICAL: EHR_MCP_URL is not configured - cannot proceed")
         raise RuntimeError("EHR_MCP_URL is not configured")
     
-    logger.info("Using EHR MCP server: %s", EHR_MCP_URL)
+    logger.info("🌐 EHR MCP Endpoint: %s", EHR_MCP_URL)
     mcp_result = _call_mcp_tool(EHR_MCP_URL, "getPatientsIdSummary", {"id": patient_id})
     
     if not mcp_result:
@@ -451,14 +461,28 @@ def fetch_patient_summary(state: CarePlanState) -> CarePlanState:
         logger.info("✓ Raw MCP response received for patient_id=%s", patient_id)
         
         # Transform Ballerina MCP format to Python backend format
+        logger.info("🔄 Transforming MCP response from Ballerina format to Python format")
         summary = _transform_mcp_to_python_format(mcp_data)
         
-        logger.info(
-            "✓ EHR summary received via MCP for patient_id=%s (last_a1c=%s, last_egfr=%s)",
-            patient_id,
-            summary.get("last_a1c"),
-            summary.get("last_egfr"),
-        )
+        # Extract key clinical indicators
+        demographics = summary.get("demographics", {})
+        age = demographics.get("age")
+        problems = summary.get("problems", [])
+        medications = summary.get("medications", [])
+        last_a1c = summary.get("last_a1c")
+        last_egfr = summary.get("last_egfr")
+        
+        logger.info("✅ STEP 1 COMPLETE: Patient summary successfully retrieved")
+        logger.info("📊 KEY CLINICAL DATA EXTRACTED:")
+        logger.info("   • Age: %s years", age)
+        logger.info("   • Active Problems: %s", ", ".join(problems) if problems else "None")
+        logger.info("   • Current Medications: %s", ", ".join(medications) if medications else "None")
+        logger.info("   • HbA1c: %s%%", last_a1c if last_a1c else "N/A")
+        logger.info("   • eGFR: %s mL/min/1.73m²", last_egfr if last_egfr else "N/A")
+        logger.info("💡 ANALYSIS: Patient data ready for evidence-based recommendation generation")
+        logger.info("=" * 100)
+        logger.info("")
+        
         return {"patient_summary": summary}
     except json.JSONDecodeError as e:
         raise RuntimeError(f"Failed to parse MCP response as JSON for patient {patient_id}") from e
@@ -467,6 +491,13 @@ def fetch_patient_summary(state: CarePlanState) -> CarePlanState:
 
 
 def call_evidence_agent(state: CarePlanState) -> CarePlanState:
+    logger.info("=" * 100)
+    logger.info("🔬 STEP 2: FETCH CLINICAL EVIDENCE & TRIALS")
+    logger.info("=" * 100)
+    logger.info("📋 REASON: Need evidence-based clinical trial data and research to support")
+    logger.info("           personalized care plan recommendations for this specific patient")
+    logger.info("-" * 100)
+    
     summary = state["patient_summary"]
     demographics = summary.get("demographics", {})
     problems = summary.get("problems", [])
@@ -481,14 +512,24 @@ def call_evidence_agent(state: CarePlanState) -> CarePlanState:
     }
 
     if payload["age"] is None or payload["egfr"] is None:
+        logger.error("❌ CRITICAL: Missing required patient data (age or eGFR)")
         raise RuntimeError("Patient summary missing age or eGFR for evidence lookup")
 
-    logger.info(
-        "Requesting evidence pack for patient_id=%s (diagnosis=%s, comorbidities=%s)",
-        state["request"]["patient_id"],
-        diagnosis,
-        payload["comorbidities"],
-    )
+    logger.info("🎯 PATIENT CLINICAL PROFILE FOR EVIDENCE MATCHING:")
+    logger.info("   • Patient ID: %s", state["request"]["patient_id"])
+    logger.info("   • Primary Diagnosis: %s", diagnosis)
+    logger.info("   • Age: %s years", payload["age"])
+    logger.info("   • eGFR: %s mL/min/1.73m²", payload["egfr"])
+    logger.info("   • Comorbidities: %s", ", ".join(payload["comorbidities"]) if payload["comorbidities"] else "None")
+    logger.info("   • Geographic Search: %s km radius", DEFAULT_GEO.get("radius_km", "N/A"))
+    logger.info("-" * 100)
+    logger.info("🔧 TOOL CHOICE: Calling Evidence Agent Service")
+    logger.info("   WHY EVIDENCE AGENT?: Specialized service that:")
+    logger.info("   1. Retrieves relevant clinical trials via MCP (Trial Registry)")
+    logger.info("   2. Filters trials based on patient's clinical profile")
+    logger.info("   3. Uses LLM to analyze trial eligibility and relevance")
+    logger.info("   4. Returns ranked evidence with suitability scores")
+    logger.info("-" * 100)
     try:
         response = requests.post(
             f"{EVIDENCE_AGENT_URL.rstrip('/')}/agents/evidence/search",
@@ -501,11 +542,34 @@ def call_evidence_agent(state: CarePlanState) -> CarePlanState:
 
     data = response.json()
     pack = data.get("evidence_pack", {})
-    logger.info(
-        "Evidence pack received: %d analyses, %d trials",
-        len(pack.get("analyses", [])),
-        len(pack.get("trials", [])),
-    )
+    analyses = pack.get("analyses", [])
+    trials = pack.get("trials", [])
+    
+    logger.info("✅ STEP 2 COMPLETE: Evidence pack successfully retrieved")
+    logger.info("📊 EVIDENCE SUMMARY:")
+    logger.info("   • Clinical Trial Analyses: %d", len(analyses))
+    logger.info("   • Matching Trials Found: %d", len(trials))
+    
+    if trials:
+        logger.info("   • Top Matching Trials:")
+        for i, trial in enumerate(trials[:3], 1):
+            logger.info("     %d. %s (NCT: %s)", i, trial.get("title", "Unknown"), trial.get("nct_id", "N/A"))
+            logger.info("        Distance: %s km | Status: %s", 
+                       trial.get("site_distance_km", "N/A"), 
+                       trial.get("status", "Unknown"))
+    
+    if analyses:
+        logger.info("   • Evidence Quality Assessment:")
+        for i, analysis in enumerate(analyses[:2], 1):
+            logger.info("     %d. Trial: %s", i, analysis.get("trial_title", "Unknown"))
+            logger.info("        Grade: %s | Summary: %s...", 
+                       analysis.get("pico_grade", "N/A"),
+                       (analysis.get("overall_summary", "")[:80] + "...") if analysis.get("overall_summary") else "N/A")
+    
+    logger.info("💡 ANALYSIS: Evidence data ready for LLM-assisted care plan generation")
+    logger.info("=" * 100)
+    logger.info("")
+    
     return {"evidence_pack": pack}
 
 
@@ -713,10 +777,43 @@ def _merge_plan_cards(primary: Dict[str, Any], fallback: Dict[str, Any]) -> Dict
 
 
 def llm_plan_card(state: CarePlanState) -> CarePlanState:
+    logger.info("=" * 100)
+    logger.info("🤖 STEP 3: LLM-ASSISTED CARE PLAN GENERATION")
+    logger.info("=" * 100)
+    logger.info("📋 REASON: Generate personalized, evidence-based clinical recommendations")
+    logger.info("           using AI to synthesize patient data + clinical evidence")
+    logger.info("-" * 100)
+    
     summary = state.get("patient_summary")
     evidence_pack = state.get("evidence_pack", {})
+    
     if not summary:
+        logger.warning("⚠️  No patient summary available - skipping LLM generation")
         return {}
+
+    # Check if we have LLM configured
+    if not API_MANAGER_CHAT_ENDPOINT:
+        logger.info("ℹ️  LLM DECISION: Skipping LLM call")
+        logger.info("   REASON: API Manager chat endpoint not configured (API_MANAGER_CHAT_ENDPOINT)")
+        logger.info("   FALLBACK: Will use heuristic-based plan card generation instead")
+        logger.info("-" * 100)
+        return {}
+    
+    logger.info("🔧 TOOL CHOICE: Using Large Language Model (LLM)")
+    logger.info("   WHY LLM?: LLMs excel at:")
+    logger.info("   1. Synthesizing complex clinical data (patient + evidence)")
+    logger.info("   2. Generating context-aware, personalized recommendations")
+    logger.info("   3. Providing clinical rationale based on evidence")
+    logger.info("   4. Suggesting appropriate alternatives and safety checks")
+    logger.info("   Model: %s", OPENAI_MODEL or "gpt-4")
+    logger.info("-" * 100)
+    logger.info("📤 INPUT TO LLM:")
+    logger.info("   • Patient Summary: Demographics, diagnoses, medications, labs")
+    logger.info("   • Evidence Pack: %d trial analyses, %d matching trials", 
+                len(evidence_pack.get("analyses", [])),
+                len(evidence_pack.get("trials", [])))
+    logger.info("   • Expected Output: Structured JSON with recommendation, rationale, orders, citations")
+    logger.info("-" * 100)
 
     messages = [
         {
@@ -741,17 +838,20 @@ def llm_plan_card(state: CarePlanState) -> CarePlanState:
         },
     ]
 
+    logger.info("⏳ Calling LLM... (this may take 5-15 seconds)")
     raw = _call_llm(messages)
+    
     if not raw:
+        logger.warning("⚠️  LLM returned empty response - will use heuristic fallback")
         return {}
 
     parsed = _extract_json_block(raw) or {}
-    logger.info(
-        "LLM plan card parsed with keys=%s",
-        list(parsed.keys()),
-    )
+    logger.info("✅ LLM response received and parsed")
+    logger.info("   Parsed keys: %s", list(parsed.keys()))
+    
     plan_candidate = parsed.get("plan_card") or parsed
     if not isinstance(plan_candidate, dict):
+        logger.warning("⚠️  LLM response format invalid - expected dict, got %s", type(plan_candidate))
         return {}
 
     plan_candidate.setdefault("llm_model", OPENAI_MODEL)
@@ -759,28 +859,78 @@ def llm_plan_card(state: CarePlanState) -> CarePlanState:
     if parsed.get("notes"):
         plan_candidate.setdefault("notes", parsed["notes"])
 
-    logger.info(
-        "LLM produced plan card keys=%s",
-        list(plan_candidate.keys()),
-    )
+    logger.info("📊 LLM PLAN CARD COMPONENTS:")
+    logger.info("   • Recommendation: %s", "✓" if plan_candidate.get("recommendation") else "✗")
+    logger.info("   • Rationale: %s", "✓" if plan_candidate.get("rationale") else "✗")
+    logger.info("   • Alternatives: %d items", len(plan_candidate.get("alternatives", [])))
+    logger.info("   • Safety Checks: %d items", len(plan_candidate.get("safety_checks", [])))
+    logger.info("   • Medication Orders: %s", "✓" if plan_candidate.get("orders", {}).get("medication") else "✗")
+    logger.info("   • Lab Orders: %d items", len(plan_candidate.get("orders", {}).get("labs", [])))
+    logger.info("   • Citations: %d items", len(plan_candidate.get("citations", [])))
+    logger.info("💡 ANALYSIS: LLM successfully generated personalized care plan")
+    logger.info("=" * 100)
+    logger.info("")
+    
     return {"llm_plan_card": plan_candidate}
 
 
 def assemble_plan(state: CarePlanState) -> CarePlanState:
+    logger.info("=" * 100)
+    logger.info("🔨 STEP 4: ASSEMBLE FINAL CARE PLAN")
+    logger.info("=" * 100)
+    logger.info("📋 REASON: Combine LLM-generated plan with rule-based heuristics")
+    logger.info("           to ensure completeness and clinical validity")
+    logger.info("-" * 100)
+    
+    logger.info("🔧 Generating heuristic-based plan card (rule-based fallback)...")
     heuristic = _draft_plan_card(state)
+    logger.info("   ✓ Heuristic plan ready with standard recommendations")
+    
     llm_card = state.get("llm_plan_card")
+    
     if llm_card:
+        logger.info("🎯 MERGE STRATEGY: Combining LLM + Heuristic")
+        logger.info("   REASON: LLM provides personalized content, heuristic ensures completeness")
+        logger.info("   MERGE LOGIC:")
+        logger.info("   • Use LLM values where available (more context-aware)")
+        logger.info("   • Fall back to heuristic values for missing fields")
+        logger.info("   • Merge trial matches intelligently (by NCT ID or title)")
+        logger.info("   • Preserve all citations and evidence highlights")
+        logger.info("-" * 100)
         plan_card = _merge_plan_cards(llm_card, heuristic)
-        logger.info(
-            "Merged LLM and heuristic plan cards for patient_id=%s",
-            state["request"]["patient_id"],
-        )
+        logger.info("✅ MERGE COMPLETE: LLM + heuristic plan cards combined")
+        logger.info("   Patient: %s", state["request"]["patient_id"])
+        logger.info("   Source: LLM-enhanced (AI-generated + rule-based)")
     else:
+        logger.info("🎯 FALLBACK STRATEGY: Using Heuristic-Only Plan")
+        logger.info("   REASON: No LLM card available (LLM skipped or failed)")
+        logger.info("   CONTENT: Rule-based clinical recommendations")
+        logger.info("   QUALITY: Valid but less personalized than LLM-enhanced")
+        logger.info("-" * 100)
         plan_card = heuristic
-        logger.info(
-            "Using heuristic-only plan card for patient_id=%s",
-            state["request"]["patient_id"],
-        )
+        logger.info("✅ HEURISTIC PLAN READY")
+        logger.info("   Patient: %s", state["request"]["patient_id"])
+        logger.info("   Source: Heuristic-only (rule-based)")
+    
+    logger.info("-" * 100)
+    logger.info("📊 FINAL CARE PLAN SUMMARY:")
+    logger.info("   • Primary Recommendation: %s", 
+                (plan_card.get("recommendation", "")[:80] + "...") if len(plan_card.get("recommendation", "")) > 80 
+                else plan_card.get("recommendation", "N/A"))
+    logger.info("   • Clinical Rationale: %s", 
+                (plan_card.get("rationale", "")[:80] + "...") if len(plan_card.get("rationale", "")) > 80 
+                else plan_card.get("rationale", "N/A"))
+    logger.info("   • Alternative Options: %d", len(plan_card.get("alternatives", [])))
+    logger.info("   • Safety Considerations: %d", len(plan_card.get("safety_checks", [])))
+    logger.info("   • Medication Orders: %s", 
+                plan_card.get("orders", {}).get("medication", {}).get("name", "None"))
+    logger.info("   • Lab Orders: %d", len(plan_card.get("orders", {}).get("labs", [])))
+    logger.info("   • Trial Matches: %d", len(plan_card.get("trial_matches", [])))
+    logger.info("   • Evidence Citations: %d", len(plan_card.get("citations", [])))
+    logger.info("=" * 100)
+    logger.info("✅ CARE PLAN GENERATION COMPLETE - Ready for delivery")
+    logger.info("=" * 100)
+    logger.info("")
 
     return {"plan_card": plan_card}
 
