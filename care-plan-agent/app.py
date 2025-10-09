@@ -259,31 +259,58 @@ def _call_mcp_tool(server_url: str, tool_name: str, arguments: Dict[str, Any]) -
     }
     
     headers = {
-        "Authorization": f"Bearer {access_token}",
+        "Authorization": f"Bearer {access_token[:20]}...{access_token[-10:]}",  # Masked for logging
         "Content-Type": "application/json",
     }
     
     try:
-        logger.info("Calling MCP tool '%s' at %s", tool_name, server_url)
+        logger.info("=" * 80)
+        logger.info("MCP REQUEST - Calling tool '%s' at %s", tool_name, server_url)
+        logger.info("JSON-RPC Request Payload:")
+        logger.info(json.dumps(payload, indent=2))
+        logger.info("Request Headers: %s", json.dumps({k: v for k, v in headers.items()}, indent=2))
+        logger.info("-" * 80)
+        
+        # Use actual token (not masked) for the request
+        actual_headers = {
+            "Authorization": f"Bearer {access_token}",
+            "Content-Type": "application/json",
+        }
+        
         response = requests.post(
             server_url,
-            headers=headers,
+            headers=actual_headers,
             json=payload,
             timeout=30,
         )
-        logger.info("MCP tool '%s' responded with status: %d", tool_name, response.status_code)
+        
+        logger.info("MCP RESPONSE - Status Code: %d", response.status_code)
+        logger.info("Response Headers: %s", json.dumps(dict(response.headers), indent=2))
+        
+        try:
+            result = response.json()
+            logger.info("JSON-RPC Response:")
+            logger.info(json.dumps(result, indent=2))
+        except json.JSONDecodeError:
+            logger.error("Failed to parse response as JSON. Raw response text:")
+            logger.error(response.text[:1000])  # Log first 1000 chars
+            raise
+        
+        logger.info("=" * 80)
+        
         response.raise_for_status()
-        result = response.json()
         
         if "error" in result:
-            logger.error("MCP tool error: %s", result["error"])
+            logger.error("❌ MCP tool error detected in response")
+            logger.error("Error details: %s", json.dumps(result["error"], indent=2))
             return None
         
         logger.info("✓ MCP tool '%s' executed successfully", tool_name)
         return result.get("result")
         
     except Exception as e:
-        logger.error("✗ MCP tool call failed: %s", e)
+        logger.error("✗ MCP tool call exception: %s", e)
+        logger.exception("Full exception traceback:")
         return None
 
 
@@ -402,57 +429,41 @@ def _transform_mcp_to_python_format(mcp_data: Dict[str, Any]) -> Dict[str, Any]:
 
 def fetch_patient_summary(state: CarePlanState) -> CarePlanState:
     patient_id = state["request"]["patient_id"]
-    logger.info("Fetching EHR summary for patient_id=%s", patient_id)
+    logger.info("Fetching EHR summary for patient_id=%s via MCP", patient_id)
     
-    # Try MCP first if configured
-    if EHR_MCP_URL:
-        logger.info("Using EHR MCP server: %s", EHR_MCP_URL)
-        mcp_result = _call_mcp_tool(EHR_MCP_URL, "getPatientsIdSummary", {"id": patient_id})
-        
-        if mcp_result and not mcp_result.get("isError", True):
-            # Extract summary from MCP response
-            content = mcp_result.get("content", [])
-            if content and isinstance(content, list) and len(content) > 0:
-                text_content = content[0].get("text", "")
-                try:
-                    mcp_data = json.loads(text_content)
-                    logger.info("✓ Raw MCP response received for patient_id=%s", patient_id)
-                    
-                    # Transform Ballerina MCP format to Python backend format
-                    summary = _transform_mcp_to_python_format(mcp_data)
-                    
-                    logger.info(
-                        "✓ EHR summary received via MCP for patient_id=%s (last_a1c=%s, last_egfr=%s)",
-                        patient_id,
-                        summary.get("last_a1c"),
-                        summary.get("last_egfr"),
-                    )
-                    return {"patient_summary": summary}
-                except json.JSONDecodeError as e:
-                    logger.warning("Failed to parse MCP response as JSON: %s, falling back to direct service", e)
-                except Exception as e:
-                    logger.warning("Failed to process MCP response: %s, falling back to direct service", e)
-        else:
-            logger.warning("MCP call failed, falling back to direct EHR service")
+    if not EHR_MCP_URL:
+        raise RuntimeError("EHR_MCP_URL is not configured")
     
-    # Fallback to direct REST call
-    logger.info("Using direct EHR service: %s", EHR_SERVICE_URL)
+    logger.info("Using EHR MCP server: %s", EHR_MCP_URL)
+    mcp_result = _call_mcp_tool(EHR_MCP_URL, "getPatientsIdSummary", {"id": patient_id})
+    
+    if not mcp_result:
+        raise RuntimeError(f"MCP call failed for patient {patient_id}")
+    
+    # Extract summary from MCP response
+    content = mcp_result.get("content", [])
+    if not content or not isinstance(content, list) or len(content) == 0:
+        raise RuntimeError(f"Invalid MCP response structure for patient {patient_id}")
+    
+    text_content = content[0].get("text", "")
     try:
-        response = requests.get(
-            f"{EHR_SERVICE_URL.rstrip('/')}/patients/{patient_id}/summary", timeout=5
+        mcp_data = json.loads(text_content)
+        logger.info("✓ Raw MCP response received for patient_id=%s", patient_id)
+        
+        # Transform Ballerina MCP format to Python backend format
+        summary = _transform_mcp_to_python_format(mcp_data)
+        
+        logger.info(
+            "✓ EHR summary received via MCP for patient_id=%s (last_a1c=%s, last_egfr=%s)",
+            patient_id,
+            summary.get("last_a1c"),
+            summary.get("last_egfr"),
         )
-        response.raise_for_status()
-    except requests.RequestException as exc:
-        raise RuntimeError("Failed to fetch patient summary from EHR Service") from exc
-
-    summary = response.json()
-    logger.info(
-        "EHR summary received for patient_id=%s (last_a1c=%s, last_egfr=%s)",
-        patient_id,
-        summary.get("last_a1c"),
-        summary.get("last_egfr"),
-    )
-    return {"patient_summary": summary}
+        return {"patient_summary": summary}
+    except json.JSONDecodeError as e:
+        raise RuntimeError(f"Failed to parse MCP response as JSON for patient {patient_id}") from e
+    except Exception as e:
+        raise RuntimeError(f"Failed to process MCP response for patient {patient_id}") from e
 
 
 def call_evidence_agent(state: CarePlanState) -> CarePlanState:
@@ -482,7 +493,7 @@ def call_evidence_agent(state: CarePlanState) -> CarePlanState:
         response = requests.post(
             f"{EVIDENCE_AGENT_URL.rstrip('/')}/agents/evidence/search",
             json=payload,
-            timeout=60,  # Increased from 10s to 60s to handle MCP retry + fallback + LLM grading
+            timeout=60,  # MCP call may take time for Trial Registry retrieval + LLM grading
         )
         response.raise_for_status()
     except requests.RequestException as exc:

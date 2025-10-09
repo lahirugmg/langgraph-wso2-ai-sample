@@ -133,9 +133,6 @@ def _call_mcp_tool(mcp_url: str, tool_name: str, arguments: Dict[str, Any]) -> O
         logger.error("✗ Failed to obtain MCP access token; skipping MCP tool call")
         return None
     
-    logger.info("Calling MCP tool '%s' at %s", tool_name, mcp_url)
-    logger.info("  Arguments: %s", arguments)
-    
     payload = {
         "jsonrpc": "2.0",
         "id": 1,
@@ -147,26 +144,50 @@ def _call_mcp_tool(mcp_url: str, tool_name: str, arguments: Dict[str, Any]) -> O
     }
     
     headers = {
-        "Authorization": f"Bearer {access_token}",
+        "Authorization": f"Bearer {access_token[:20]}...{access_token[-10:]}",  # Masked for logging
         "Content-Type": "application/json",
     }
     
     try:
-        logger.info("Sending MCP tool request...")
+        logger.info("=" * 80)
+        logger.info("MCP REQUEST - Calling tool '%s' at %s", tool_name, mcp_url)
+        logger.info("JSON-RPC Request Payload:")
+        logger.info(json.dumps(payload, indent=2))
+        logger.info("Request Headers: %s", json.dumps({k: v for k, v in headers.items()}, indent=2))
+        logger.info("-" * 80)
+        
+        # Use actual token (not masked) for the request
+        actual_headers = {
+            "Authorization": f"Bearer {access_token}",
+            "Content-Type": "application/json",
+        }
+        
         response = requests.post(
             mcp_url,
-            headers=headers,
+            headers=actual_headers,
             json=payload,
             timeout=30,
         )
         
-        logger.info("MCP tool responded with status: %d", response.status_code)
+        logger.info("MCP RESPONSE - Status Code: %d", response.status_code)
+        logger.info("Response Headers: %s", json.dumps(dict(response.headers), indent=2))
+        
+        try:
+            data = response.json()
+            logger.info("JSON-RPC Response:")
+            logger.info(json.dumps(data, indent=2))
+        except json.JSONDecodeError:
+            logger.error("Failed to parse response as JSON. Raw response text:")
+            logger.error(response.text[:1000])  # Log first 1000 chars
+            raise
+        
+        logger.info("=" * 80)
         
         response.raise_for_status()
-        data = response.json()
         
         if "error" in data:
-            logger.error("✗ MCP tool error: %s", data["error"])
+            logger.error("❌ MCP tool error detected in response")
+            logger.error("Error details: %s", json.dumps(data["error"], indent=2))
             return None
         
         result = data.get("result")
@@ -174,13 +195,13 @@ def _call_mcp_tool(mcp_url: str, tool_name: str, arguments: Dict[str, Any]) -> O
         return result
         
     except requests.HTTPError as exc:
-        logger.error("✗ MCP tool HTTP error: status=%d, response=%s", 
-                    response.status_code, 
-                    response.text[:200] if response.text else "empty")
-        logger.exception("✗ MCP tool call failed: %s", exc)
+        logger.error("✗ MCP tool HTTP error: status=%d", response.status_code)
+        logger.error("Response text (first 500 chars): %s", response.text[:500] if response.text else "empty")
+        logger.exception("Full HTTP error traceback:")
         return None
     except (requests.RequestException, KeyError, ValueError) as exc:
-        logger.exception("✗ MCP tool call failed: %s", exc)
+        logger.error("✗ MCP tool call exception: %s", exc)
+        logger.exception("Full exception traceback:")
         return None
 
 
@@ -489,56 +510,43 @@ def _extract_json_block(text: str) -> Optional[dict[str, Any]]:
 def fetch_trials(state: EvidenceState) -> EvidenceState:
     context = state["context"]
     logger.info(
-        "Fetching trials for diagnosis=%s egfr=%.1f (radius=%s)",
+        "Fetching trials for diagnosis=%s egfr=%.1f (radius=%s) via MCP",
         context["diagnosis"],
         context["egfr"],
         context.get("geo", {}).get("radius_km"),
     )
     
-    trials: List[dict] = []
+    if not TRIAL_REGISTRY_MCP_URL:
+        raise RuntimeError("TRIAL_REGISTRY_MCP_URL is not configured")
     
-    # Try MCP first if configured
-    if TRIAL_REGISTRY_MCP_URL:
-        logger.info("Using Trial Registry MCP server: %s", TRIAL_REGISTRY_MCP_URL)
-        # Note: Trial Registry MCP tool is named "get" not "getTrials"
-        mcp_result = _call_mcp_tool(TRIAL_REGISTRY_MCP_URL, "get", {})
-        
-        if mcp_result and not mcp_result.get("isError", True):
-            # Extract trials from MCP response
-            content = mcp_result.get("content", [])
-            if content and isinstance(content, list) and len(content) > 0:
-                text_content = content[0].get("text", "")
-                try:
-                    mcp_data = json.loads(text_content)
-                    # MCP returns {totalCount: N, trials: [...]} structure
-                    if isinstance(mcp_data, dict) and "trials" in mcp_data:
-                        trials = mcp_data["trials"]
-                        logger.info("✓ Retrieved %d trials via MCP (totalCount: %d)", 
-                                   len(trials), mcp_data.get("totalCount", len(trials)))
-                    elif isinstance(mcp_data, list):
-                        # Fallback: if it's already a list
-                        trials = mcp_data
-                        logger.info("✓ Retrieved %d trials via MCP", len(trials))
-                    else:
-                        logger.warning("Unexpected MCP response format: %s", type(mcp_data))
-                except json.JSONDecodeError:
-                    logger.warning("Failed to parse MCP response as JSON, falling back to direct service")
+    logger.info("Using Trial Registry MCP server: %s", TRIAL_REGISTRY_MCP_URL)
+    # Note: Trial Registry MCP tool is named "get" not "getTrials"
+    mcp_result = _call_mcp_tool(TRIAL_REGISTRY_MCP_URL, "get", {})
+    
+    if not mcp_result:
+        raise RuntimeError("MCP call failed for Trial Registry")
+    
+    # Extract trials from MCP response
+    content = mcp_result.get("content", [])
+    if not content or not isinstance(content, list) or len(content) == 0:
+        raise RuntimeError("Invalid MCP response structure from Trial Registry")
+    
+    text_content = content[0].get("text", "")
+    try:
+        mcp_data = json.loads(text_content)
+        # MCP returns {totalCount: N, trials: [...]} structure
+        if isinstance(mcp_data, dict) and "trials" in mcp_data:
+            trials = mcp_data["trials"]
+            logger.info("✓ Retrieved %d trials via MCP (totalCount: %d)", 
+                       len(trials), mcp_data.get("totalCount", len(trials)))
+        elif isinstance(mcp_data, list):
+            # Handle case where it's already a list
+            trials = mcp_data
+            logger.info("✓ Retrieved %d trials via MCP", len(trials))
         else:
-            logger.warning("MCP call failed or returned no data, falling back to direct Trial Registry service")
-    
-    # Fallback to direct REST call if MCP failed or not configured
-    if not trials and TRIAL_REGISTRY_URL:
-        logger.info("Using direct Trial Registry service: %s", TRIAL_REGISTRY_URL)
-        try:
-            url = f"{TRIAL_REGISTRY_URL.rstrip('/')}/trials"
-            response = requests.get(url, timeout=10)
-            logger.info("Trial Registry endpoint responded: status=%s", response.status_code)
-            response.raise_for_status()
-            trials = response.json()
-            logger.info("✓ Retrieved %d trials via direct service", len(trials))
-        except requests.RequestException as exc:
-            logger.exception("Trial Registry request failed: %s", exc)
-            raise RuntimeError("Failed to reach Trial Registry service") from exc
+            raise RuntimeError(f"Unexpected MCP response format: {type(mcp_data)}")
+    except json.JSONDecodeError as e:
+        raise RuntimeError("Failed to parse MCP response as JSON from Trial Registry") from e
     diagnosis = context["diagnosis"].lower()
     egfr = context["egfr"]
     geo = context.get("geo")
