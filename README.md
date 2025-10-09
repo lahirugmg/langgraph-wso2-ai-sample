@@ -6,24 +6,23 @@ Minimal workspace containing LangGraph agents plus REST backends for clinical re
 - Python 3.10 or newer (virtual environments recommended)
 
 ## Services & Agents
-### Trial Registry Service
-1. `cp trial-registry-backend/.env.example trial-registry-backend/.env`
-2. `pip install -r trial-registry-backend/requirements.txt`
-3. `uvicorn app:app --app-dir trial-registry-backend --reload --port 8002`
-4. Swagger UI: <http://127.0.0.1:8002/docs>
 
-Endpoints cover `GET /trials`, `POST /trials`, and return structured metadata (NCT id, distance, eligibility summary) for the Evidence Agent.
+> **Note**: EHR and Trial Registry services are now provided via **MCP (Model Context Protocol)** servers with OAuth2 authentication. The Python backend implementations have been removed as we're fully dependent on MCP services.
 
-### EHR Service
-1. `cp ehr-backend/.env.example ehr-backend/.env`
-2. `pip install -r ehr-backend/requirements.txt`
-3. `uvicorn app:app --app-dir ehr-backend --reload --port 8001`
-4. Swagger UI: <http://127.0.0.1:8001/docs>
+### MCP Services (External)
+The following services are accessed via MCP protocol:
 
-Key routes:
-- `GET /patients/{id}/summary`
-- `GET /patients/{id}/labs?names=eGFR,A1c&last_n=6` → `{ "patient_id": "12873", "labs": [...] }`
-- `POST /orders/medication`
+#### **EHR MCP Service**
+- Provides patient demographics, conditions, medications, and lab results
+- Endpoint: `EHR_MCP_URL` (configured in `.env`)
+- MCP Tool: `getPatientsIdSummary`
+- Authentication: OAuth2 client credentials flow
+
+#### **Trial Registry MCP Service**
+- Supplies structured clinical trial data
+- Endpoint: `TRIAL_REGISTRY_MCP_URL` (configured in `.env`)
+- MCP Tools: `get`, `getTrialid`, `post`
+- Authentication: OAuth2 client credentials flow
 
 ### Evidence Agent
 1. `cp evidence-agent/.env.example evidence-agent/.env`
@@ -62,37 +61,40 @@ The portal calls the Care-Plan Agent via `/api/care-plan`, fetches labs through 
 
 ### Architecture Overview
 - **Frontend (Next.js)** – orchestrates the doctor workflow and keeps credentials server-side. It talks only to internal `/api/*` routes.
-- **Care-Plan Agent (LangGraph)** – fetches EHR summary ➜ requests the Evidence Agent ➜ invokes an optional LLM node to draft the plan card ➜ merges with guard-rail heuristics before responding.
-- **Evidence Agent (LangGraph)** – pulls candidate trials from the Trial Registry ➜ optional LLM node grades relevance (PICO, risk/benefit) ➜ falls back to heuristics when no model is configured.
-- **EHR Service** – provides patient summaries, labs, and mock order endpoints.
-- **Trial Registry Service** – supplies structured trial data for both the Evidence Agent and UI.
+- **Care-Plan Agent (LangGraph)** – fetches EHR summary via MCP ➜ requests the Evidence Agent ➜ invokes an optional LLM node to draft the plan card ➜ merges with guard-rail heuristics before responding.
+- **Evidence Agent (LangGraph)** – pulls candidate trials from Trial Registry via MCP ➜ optional LLM node grades relevance (PICO, risk/benefit) ➜ falls back to heuristics when no model is configured.
+- **EHR MCP Service** (External) – provides patient summaries, labs, and order capabilities via Model Context Protocol.
+- **Trial Registry MCP Service** (External) – supplies structured trial data via Model Context Protocol.
 
 Set `OPENAI_API_KEY` plus optional `OPENAI_MODEL`/`OPENAI_BASE_URL` to enable the LLM nodes. Without these variables the agents happily revert to heuristic logic, keeping local demos self-contained.
 
 ![FHIR-aligned flow](media/FHIR_flow.png)
 
 ## Test the Care-Plan Agent
-1. Run the services above (Trial Registry, EHR, Evidence Agent).
-2. Trigger the agent: `curl -X POST http://127.0.0.1:8004/agents/care-plan/recommendation \
+1. Ensure MCP services are configured (see **MCP Integration** section below).
+2. Run the agents: `./start_services.sh`
+3. Trigger the agent: `curl -X POST http://127.0.0.1:8004/agents/care-plan/recommendation \
    -H 'Content-Type: application/json' \
    -d '{"user_id":"dr_patel","patient_id":"12873","question":"Add-on to metformin..."}'`
-3. Verify the JSON response contains a `plan_card.recommendation` recommending an SGLT2 inhibitor and two local trial matches.
+4. Verify the JSON response contains a `plan_card.recommendation` recommending an SGLT2 inhibitor and two local trial matches.
 
 For ad-hoc checks, run `python care-plan-agent/simple_langgraph.py` to confirm the sample LangGraph loop still operates.
 
 ## Start / Stop everything with scripts
-- Start: `./start_services.sh` (launches all backends, agents, and the frontend; logs streamed to `logs/<service>.log`).
+- Start: `./start_services.sh` (launches agents and frontend; logs streamed to `logs/<service>.log`).
 - Stop: `./stop_services.sh` (gracefully terminates everything and optionally deletes the `logs/` directory).
+
+**Note**: EHR and Trial Registry services are accessed via external MCP servers and do not need to be started locally.
 
 ## MCP Integration
 
-The agents now support consuming backend services via **Model Context Protocol (MCP)** with OAuth2 authentication:
+The agents **require** consuming backend services via **Model Context Protocol (MCP)** with OAuth2 authentication:
 
-- **Care Plan Agent**: Can consume EHR data via MCP gateway (`EHR_MCP_URL`)
-- **Evidence Agent**: Can consume trials via MCP gateway (`TRIAL_REGISTRY_MCP_URL`)
+- **Care Plan Agent**: Consumes EHR data via MCP gateway (`EHR_MCP_URL`)
+- **Evidence Agent**: Consumes trials via MCP gateway (`TRIAL_REGISTRY_MCP_URL`)
 - **Authentication**: OAuth2 client credentials flow with token caching
-- **Fallback**: Gracefully falls back to direct REST APIs if MCP is unavailable
 - **Schema Transformation**: Automatic conversion between Ballerina MCP and Python backend formats
+- **No Fallback**: Python backend services have been removed - MCP is the only data source
 
 ### Configuration (.env files)
 ```bash
@@ -109,14 +111,18 @@ TRIAL_REGISTRY_MCP_URL=https://gateway/clinicagent/trial-registry-mcp/v1.0/mcp
 ### Key Features
 - ✅ **OAuth2 Token Caching**: Reduces authentication overhead (3600s TTL)
 - ✅ **Schema Transformation**: Maps Ballerina MCP format (camelCase, nested objects) to Python format (snake_case, flat values)
-- ✅ **Graceful Fallback**: Direct REST API calls when MCP unavailable
 - ✅ **JSON-RPC 2.0**: Proper MCP protocol implementation
+- ✅ **MCP-Only Architecture**: No Python backend dependencies - fully cloud-native
+- ✅ **Detailed Logging**: Comprehensive JSON-RPC request/response logging for debugging
 
 ### Documentation
 - [`EHR_BACKEND_COMPARISON.md`](EHR_BACKEND_COMPARISON.md) - Schema differences between backends
 - [`SCHEMA_TRANSFORMATION_SUMMARY.md`](SCHEMA_TRANSFORMATION_SUMMARY.md) - Transformation implementation details
 - [`MCP_INTEGRATION.md`](MCP_INTEGRATION.md) - MCP setup guide
 - [`MCP_CHANGES_SUMMARY.md`](MCP_CHANGES_SUMMARY.md) - Code changes summary
+- [`MCP_ONLY_CHANGES.md`](MCP_ONLY_CHANGES.md) - Fallback removal and MCP-only architecture
+- [`MCP_DETAILED_LOGGING.md`](MCP_DETAILED_LOGGING.md) - JSON-RPC request/response logging
+- [`ENHANCED_REASONING_LOGS.md`](ENHANCED_REASONING_LOGS.md) - Workflow decision logging
 
 ## FHIR Relevance
 - **EHR Service** — could emit FHIR `Patient`, `Condition`, `Observation`, and `MedicationRequest` resources instead of ad-hoc JSON.

@@ -33,7 +33,6 @@ start_process() {
 ensure_python_requirements() {
   local service_name="$1"
   local req_path="$2"
-  local log_file="$LOG_DIR/${service_name}-deps.log"
 
   if [[ -f "$req_path" ]]; then
     echo "Installing Python dependencies for $service_name (logging to $log_file)"
@@ -68,7 +67,7 @@ start_process "care-plan-agent-service" \
 
 if [[ ! -d "$ROOT_DIR/frontend/node_modules" ]]; then
   echo "Installing frontend dependencies..."
-  npm --prefix "$ROOT_DIR/frontend" install >> "$LOG_DIR/frontend-install.log" 2>&1
+  npm --prefix "$ROOT_DIR/frontend" install > /dev/null 2>&1
 fi
 
 start_process "frontend" \
@@ -82,10 +81,10 @@ fi
 cat <<INFO
 
 All services launched. Active logs:
-  - $LOG_DIR/trial-registry-service.log
-  - $LOG_DIR/ehr-service.log
   - $LOG_DIR/evidence-agent-service.log
   - $LOG_DIR/care-plan-agent-service.log
   - $LOG_DIR/frontend.log
+
+Note: EHR and Trial Registry data are accessed via MCP servers (not local Python backends)
 
 INFO

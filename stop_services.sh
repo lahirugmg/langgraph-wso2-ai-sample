@@ -22,8 +22,7 @@ stop_process() {
   echo "$name stopped."
 }
 
-stop_process "trial registry service" "uvicorn app:app --app-dir $ROOT_DIR/trial-registry-backend"
-stop_process "EHR service" "uvicorn app:app --app-dir $ROOT_DIR/ehr-backend"
+# Note: Trial Registry and EHR services removed - now using MCP servers
 stop_process "evidence agent" "uvicorn evidence_agent:app --app-dir $ROOT_DIR/evidence-agent"
 stop_process "care plan agent" "uvicorn app:app --app-dir $ROOT_DIR/care-plan-agent"
 stop_process "frontend" "next dev -p 8080"
