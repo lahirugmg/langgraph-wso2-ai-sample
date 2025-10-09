@@ -156,10 +156,25 @@ def _call_llm(messages: List[dict[str, str]]) -> Optional[str]:
         logger.error("✗ Failed to obtain access token; skipping LLM plan drafting")
         return None
 
-    logger.info("Calling LLM API via API Manager proxy")
-    logger.info("  Endpoint: %s", API_MANAGER_CHAT_ENDPOINT)
-    logger.info("  Model: %s", OPENAI_MODEL)
-    logger.info("  Messages: %d", len(messages))
+    logger.info("=" * 80)
+    logger.info("🤖 LLM API CALL - Care Plan Generation")
+    logger.info("=" * 80)
+    logger.info("Endpoint: %s", API_MANAGER_CHAT_ENDPOINT)
+    logger.info("Model: %s", OPENAI_MODEL)
+    logger.info("Messages: %d", len(messages))
+    logger.info("-" * 80)
+    logger.info("📤 LLM REQUEST PROMPT:")
+    for i, msg in enumerate(messages, 1):
+        role = msg.get("role", "unknown")
+        content = msg.get("content", "")
+        logger.info("Message %d [%s]:", i, role.upper())
+        # Truncate very long content for readability
+        if len(content) > 500:
+            logger.info("%s... [truncated, total %d chars]", content[:500], len(content))
+        else:
+            logger.info("%s", content)
+        logger.info("")
+    logger.info("-" * 80)
     
     headers = {
         "Authorization": f"Bearer {access_token[:20]}..." if len(access_token) > 20 else "Bearer ***",
@@ -168,12 +183,12 @@ def _call_llm(messages: List[dict[str, str]]) -> Optional[str]:
     payload = {
         "model": OPENAI_MODEL,
         "messages": messages,
-        "temperature": 0.2,
         "response_format": {"type": "json_object"},
     }
 
     try:
-        logger.info("Sending request to LLM API...")
+        logger.info("⏳ Sending request to LLM API...")
+        start_time = __import__('time').time()
         response = requests.post(
             API_MANAGER_CHAT_ENDPOINT,
             headers={
@@ -183,15 +198,34 @@ def _call_llm(messages: List[dict[str, str]]) -> Optional[str]:
             json=payload,
             timeout=180,
         )
+        elapsed = __import__('time').time() - start_time
         
-        logger.info("LLM API responded with status: %d", response.status_code)
+        logger.info("📥 LLM API responded with status: %d (took %.2fs)", response.status_code, elapsed)
         
         response.raise_for_status()
         data = response.json()
         content = data["choices"][0]["message"]["content"]
         
-        logger.info("✓ LLM response received successfully (%d chars)", len(content))
-        logger.info("✓ LLM plan generation completed")
+        logger.info("-" * 80)
+        logger.info("📥 LLM RESPONSE:")
+        # Truncate very long responses for readability
+        if len(content) > 1000:
+            logger.info("%s... [truncated, total %d chars]", content[:1000], len(content))
+        else:
+            logger.info("%s", content)
+        logger.info("-" * 80)
+        
+        # Log token usage if available
+        if "usage" in data:
+            usage = data["usage"]
+            logger.info("📊 Token Usage:")
+            logger.info("  • Prompt tokens: %d", usage.get("prompt_tokens", 0))
+            logger.info("  • Completion tokens: %d", usage.get("completion_tokens", 0))
+            logger.info("  • Total tokens: %d", usage.get("total_tokens", 0))
+        
+        logger.info("✓ LLM plan generation completed successfully")
+        logger.info("=" * 80)
+        logger.info("")
         return content
     except requests.HTTPError as exc:
         logger.error("✗ LLM API HTTP error: status=%d, response=%s", 
