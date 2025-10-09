@@ -70,6 +70,12 @@ EHR_MCP_URL = _strip_quotes(os.environ.get("EHR_MCP_URL"))
 _access_token_cache = {"token": None, "expires_at": 0}
 _mcp_access_token_cache = {"token": None, "expires_at": 0}
 
+# Global cache for MCP tools list (cached for 5 minutes)
+_mcp_tools_cache = {
+    "ehr": {"tools": [], "timestamp": 0},
+    "trial_registry": {"tools": [], "timestamp": 0}
+}
+
 
 class CarePlanRequestState(TypedDict):
     user_id: str
@@ -194,6 +200,110 @@ def _call_llm(messages: List[dict[str, str]]) -> Optional[str]:
         return None
     except (requests.RequestException, KeyError, IndexError, ValueError) as exc:
         logger.exception("✗ LLM call failed: %s", exc)
+        return None
+
+
+def _list_mcp_tools(server_url: str, cache_key: str) -> List[Dict[str, Any]]:
+    """List available tools from MCP server with caching."""
+    import time
+    
+    # Check cache (valid for 5 minutes)
+    cache_entry = _mcp_tools_cache.get(cache_key, {"tools": [], "timestamp": 0})
+    if cache_entry["tools"] and (time.time() - cache_entry["timestamp"]) < 300:
+        logger.info("📦 Using cached tools list for %s (%d tools)", cache_key, len(cache_entry["tools"]))
+        return cache_entry["tools"]
+    
+    access_token = _get_mcp_access_token()
+    if not access_token:
+        logger.error("Failed to obtain MCP access token for listing tools")
+        return []
+    
+    payload = {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "tools/list"
+    }
+    
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "Content-Type": "application/json",
+    }
+    
+    try:
+        logger.info("🔍 Discovering available MCP tools from %s...", server_url)
+        response = requests.post(
+            server_url,
+            headers=headers,
+            json=payload,
+            timeout=10,
+        )
+        response.raise_for_status()
+        result = response.json()
+        
+        if "error" in result:
+            logger.error("MCP tools/list error: %s", result["error"])
+            return []
+        
+        tools = result.get("result", {}).get("tools", [])
+        logger.info("✅ Discovered %d MCP tools from %s:", len(tools), cache_key)
+        for tool in tools:
+            logger.info("   • %s - %s", tool.get("name"), tool.get("description", "No description"))
+        
+        # Update cache
+        _mcp_tools_cache[cache_key] = {
+            "tools": tools,
+            "timestamp": time.time()
+        }
+        
+        return tools
+    except Exception as e:
+        logger.error("Failed to list MCP tools: %s", e)
+        return []
+
+
+def _find_best_mcp_tool(tools: List[Dict[str, Any]], purpose: str, keywords: List[str]) -> Optional[Dict[str, Any]]:
+    """
+    Intelligently find the best matching MCP tool based on purpose and keywords.
+    
+    Args:
+        tools: List of available MCP tools
+        purpose: Human-readable description of what we want to do
+        keywords: List of keywords to search for in tool name/description
+    
+    Returns:
+        Best matching tool dict or None
+    """
+    logger.info("🤔 Selecting best tool for purpose: '%s'", purpose)
+    logger.info("   Search keywords: %s", ", ".join(keywords))
+    
+    best_match = None
+    best_score = 0
+    
+    for tool in tools:
+        name = tool.get("name", "").lower()
+        description = tool.get("description", "").lower()
+        score = 0
+        
+        # Score based on keyword matches
+        for keyword in keywords:
+            keyword_lower = keyword.lower()
+            if keyword_lower in name:
+                score += 10  # Name match is highest priority
+            if keyword_lower in description:
+                score += 5   # Description match is secondary
+        
+        if score > best_score:
+            best_score = score
+            best_match = tool
+            logger.info("   📊 Candidate: '%s' (score: %d)", name, score)
+    
+    if best_match:
+        logger.info("✅ Selected tool: '%s' - %s", 
+                   best_match.get("name"), 
+                   best_match.get("description", ""))
+        return best_match
+    else:
+        logger.warning("⚠️  No matching tool found for purpose: '%s'", purpose)
         return None
 
 
@@ -435,9 +545,6 @@ def fetch_patient_summary(state: CarePlanState) -> CarePlanState:
     logger.info("📋 REASON: Need comprehensive patient data (demographics, conditions, labs, medications)")
     logger.info("           to make informed clinical decisions about care plan recommendations")
     logger.info("👤 Patient ID: %s", patient_id)
-    logger.info("🔧 TOOL CHOICE: Using MCP (Model Context Protocol) tool 'getPatientsIdSummary'")
-    logger.info("   WHY MCP?: Standardized protocol for secure, structured clinical data access")
-    logger.info("   EXPECTED DATA: demographics, problems/diagnoses, medications, recent lab values")
     logger.info("-" * 100)
     
     if not EHR_MCP_URL:
@@ -445,7 +552,50 @@ def fetch_patient_summary(state: CarePlanState) -> CarePlanState:
         raise RuntimeError("EHR_MCP_URL is not configured")
     
     logger.info("🌐 EHR MCP Endpoint: %s", EHR_MCP_URL)
-    mcp_result = _call_mcp_tool(EHR_MCP_URL, "getPatientsIdSummary", {"id": patient_id})    
+    
+    # Step 1: Discover available tools
+    available_tools = _list_mcp_tools(EHR_MCP_URL, "ehr")
+    if not available_tools:
+        raise RuntimeError("Failed to discover EHR MCP tools")
+    
+    # Step 2: Find best tool for getting patient summary
+    best_tool = _find_best_mcp_tool(
+        available_tools,
+        purpose="Retrieve comprehensive patient summary including demographics, conditions, medications, and labs",
+        keywords=["patient", "summary", "get"]
+    )
+    
+    if not best_tool:
+        raise RuntimeError("No suitable MCP tool found for fetching patient summary")
+    
+    tool_name = best_tool["name"]
+    logger.info("🔧 SELECTED TOOL: '%s'", tool_name)
+    logger.info("   Description: %s", best_tool.get("description", "N/A"))
+    logger.info("   WHY THIS TOOL?: Best match for retrieving patient summary data")
+    
+    # Step 3: Determine the correct parameter name from the tool's input schema
+    input_schema = best_tool.get("inputSchema", {})
+    properties = input_schema.get("properties", {})
+    required_params = input_schema.get("required", [])
+    
+    # Find the parameter name for patient ID (could be 'patient_id', 'id', 'patientId', etc.)
+    patient_id_param = None
+    for param_name in properties.keys():
+        if "patient" in param_name.lower() and "id" in param_name.lower():
+            patient_id_param = param_name
+            break
+    
+    if not patient_id_param and required_params:
+        # If we didn't find a patient_id param, use the first required param
+        patient_id_param = required_params[0]
+    
+    if not patient_id_param:
+        patient_id_param = "patient_id"  # Default fallback
+    
+    logger.info("   Parameter mapping: '%s' = '%s'", patient_id_param, patient_id)
+    
+    # Step 4: Call the selected tool
+    mcp_result = _call_mcp_tool(EHR_MCP_URL, tool_name, {patient_id_param: patient_id})    
     if not mcp_result:
         raise RuntimeError(f"MCP call failed for patient {patient_id}")
     
