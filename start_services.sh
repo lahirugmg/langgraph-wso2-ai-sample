@@ -78,6 +78,5 @@ All services launched. Active logs:
   - $LOG_DIR/care-plan-agent-service.log
   - $LOG_DIR/frontend.log
 
-Note: EHR and Trial Registry data are accessed via MCP servers (not local Python backends)
 
 INFO
