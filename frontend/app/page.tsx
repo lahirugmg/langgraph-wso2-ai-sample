@@ -75,6 +75,13 @@ type PlanResponse = {
   plan_card: PlanCard;
 };
 
+type StatusEntry = {
+  agent: string;
+  message: string;
+  timestamp: string;
+  tone: 'info' | 'success' | 'error';
+};
+
 const DEFAULT_QUESTION =
   'Add-on to metformin for T2D with CKD stage 3; show supporting evidence and local recruiting trials.';
 
@@ -83,6 +90,35 @@ const formatDate = (value?: string) => {
   const dt = new Date(value);
   return Number.isNaN(dt.getTime()) ? value : dt.toLocaleDateString();
 };
+
+const formatTimestamp = (iso: string) => {
+  const dt = new Date(iso);
+  if (Number.isNaN(dt.getTime())) return iso;
+  return dt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+};
+
+const examplePrompts = [
+  {
+    title: 'Medication Optimization',
+    prompt:
+      'For Mr. K with uncontrolled T2D on basal insulin, what are the safest GLP-1 options and monitoring steps?',
+  },
+  {
+    title: 'Renal Safety Check',
+    prompt:
+      'My CKD stage 4 patient is on empagliflozin. Flag any contraindications and outline next renal labs.',
+  },
+  {
+    title: 'Trial Finder',
+    prompt:
+      'Locate recruiting cardiometabolic trials within 50 miles for Ms. R (T2D, obesity, ASCVD).',
+  },
+  {
+    title: 'Medication Transition',
+    prompt:
+      'I want to step Mrs. S off sulfonylurea to an SGLT2 inhibitor—confirm coverage gaps and surveillance.',
+  },
+];
 
 const renderList = (items?: string[]) => {
   if (!items || items.length === 0) {
@@ -105,9 +141,23 @@ export default function HomePage() {
   const [labs, setLabs] = useState<LabResponse | null>(null);
   const [evidence, setEvidence] = useState<EvidenceResponse | null>(null);
   const [activeTab, setActiveTab] = useState<'plan' | 'labs' | 'evidence'>('plan');
-  const [status, setStatus] = useState<string>('');
+  const [statusBanner, setStatusBanner] = useState<string>('');
+  const [statusTone, setStatusTone] = useState<'info' | 'success' | 'error'>('info');
+  const [statusLog, setStatusLog] = useState<StatusEntry[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isEvidenceLoading, setEvidenceLoading] = useState(false);
+
+  const pushStatus = (agent: string, message: string, tone: 'info' | 'success' | 'error' = 'info') => {
+    const entry: StatusEntry = {
+      agent,
+      message,
+      timestamp: new Date().toISOString(),
+      tone,
+    };
+    setStatusBanner(`${agent}: ${message}`);
+    setStatusTone(tone);
+    setStatusLog((prev) => [...prev.slice(-9), entry]);
+  };
 
   const fetchLabs = async (id: string) => {
     const response = await fetch(
@@ -120,11 +170,12 @@ export default function HomePage() {
 
     const data: LabResponse = await response.json();
     setLabs(data);
+    pushStatus('EHR MCP', 'Latest labs retrieved', 'success');
   };
 
   const fetchEvidence = async (id: string) => {
     setEvidenceLoading(true);
-    setStatus('Fetching evidence pack…');
+    pushStatus('Evidence Agent', 'Fetching evidence pack…');
 
     try {
       const response = await fetch('/api/evidence', {
@@ -143,11 +194,11 @@ export default function HomePage() {
       const data: EvidenceResponse = await response.json();
       setEvidence(data);
       setActiveTab('evidence');
-      setStatus('Evidence pack ready.');
+      pushStatus('Evidence Agent', 'Evidence pack ready.', 'success');
     } catch (err: unknown) {
       console.error(err);
       const message = err instanceof Error ? err.message : 'Unable to fetch evidence';
-      setStatus(message);
+      pushStatus('Evidence Agent', message, 'error');
     } finally {
       setEvidenceLoading(false);
     }
@@ -156,7 +207,10 @@ export default function HomePage() {
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setIsLoading(true);
-    setStatus('Contacting Care-Plan Agent…');
+    setStatusLog([]);
+    setStatusBanner('');
+    pushStatus('NovigiHealth Planner', `Reviewing request for patient ${patientId}…`);
+    pushStatus('Care-Plan Agent', 'Contacting orchestrator…');
     setPlanCard(null);
     setLabs(null);
 
@@ -175,23 +229,24 @@ export default function HomePage() {
         const errorBody = await response.json().catch(() => ({}));
         throw new Error(errorBody.detail || 'Care-Plan Agent error');
       }
+      pushStatus('Care-Plan Agent', 'Synthesizing recommendation…');
 
       const data: PlanResponse = await response.json();
       setPlanCard(data.plan_card);
       setActiveTab('plan');
-      setStatus('Plan card generated.');
+      pushStatus('Care-Plan Agent', 'Plan card generated.', 'success');
 
       try {
         await fetchLabs(patientId);
       } catch (labError: unknown) {
         console.error(labError);
         const message = labError instanceof Error ? labError.message : 'Unable to load labs';
-        setStatus((prev) => `${prev} ${message}`.trim());
+        pushStatus('EHR MCP', message, 'error');
       }
     } catch (err: unknown) {
       console.error(err);
       const message = err instanceof Error ? err.message : 'Something went wrong';
-      setStatus(message);
+      pushStatus('System', message, 'error');
     } finally {
       setIsLoading(false);
     }
@@ -200,12 +255,37 @@ export default function HomePage() {
   return (
     <main>
       <header>
-        <h1>Care-Plan Assistant</h1>
-        <p>
-          Generate evidence-backed recommendations, preview nearby trials, and review labs for
-          complex patients.
+        <div className="brand-banner">
+          <div className="brand-mark">NovigiHealth</div>
+          <div>
+            <h1>Care Intelligence Studio</h1>
+            <p>
+              Orchestrate dynamic agents that blend EHR insights, real-world trials, and guarded
+              LLM reasoning to support every visit.
+            </p>
+          </div>
+        </div>
+        <p className="muted">
+          Tip: Ask about next-line therapies, contraindications, monitoring plans, or trial
+          qualification—NovigiHealth agents will coordinate the right MCP tools automatically.
         </p>
       </header>
+
+      <section className="card prompt-card">
+        <h2>What can I ask?</h2>
+        <p className="muted">
+          NovigiHealth supports complex care planning, trial discovery, and safety surveillance. Try
+          one of these prompts or craft your own.
+        </p>
+        <div className="prompt-grid">
+          {examplePrompts.map((item) => (
+            <div key={item.title} className="prompt-item">
+              <h3>{item.title}</h3>
+              <p>{item.prompt}</p>
+            </div>
+          ))}
+        </div>
+      </section>
 
       <section className="card">
         <h2>Request a Plan</h2>
@@ -237,7 +317,27 @@ export default function HomePage() {
             {isLoading ? 'Generating…' : 'Generate Plan Card'}
           </button>
         </form>
-        {status ? <div className={`status${status.includes('error') ? ' error' : ''}`}>{status}</div> : null}
+        {statusBanner ? (
+          <div className={`status-banner ${statusTone}`}>
+            <span>{statusBanner}</span>
+          </div>
+        ) : null}
+        {statusLog.length > 0 ? (
+          <div className="status-timeline">
+            <h3>Live Agent Timeline</h3>
+            <ul>
+              {statusLog.map((entry, index) => (
+                <li key={`${entry.timestamp}-${index}`} className={`status-item ${entry.tone}`}>
+                  <div className="status-meta">
+                    <span className="status-agent">{entry.agent}</span>
+                    <span className="status-time">{formatTimestamp(entry.timestamp)}</span>
+                  </div>
+                  <p>{entry.message}</p>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
       </section>
 
       <section className="card">
