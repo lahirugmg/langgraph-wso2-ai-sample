@@ -1,13 +1,9 @@
 # langgraph-wso2-ai-sample
 
-Minimal workspace containing LangGraph agents plus REST backends for clinical research, EHR, and an accompanying clinician UI.
+Minimal sample containing LangGraph agents plus REST backends for clinical research, EHR, and an accompanying clinician UI with **AI Gateway for Egress control in LLM call** and **MCP tool consumption**.
 
 ## Prerequisites
 - Python 3.10 or newer (virtual environments recommended)
-
-## Services & Agents
-
-> **Note**: EHR and Trial Registry services are now provided via **MCP (Model Context Protocol)** servers with OAuth2 authentication. The Python backend implementations have been removed as we're fully dependent on MCP services.
 
 ### MCP Services (External)
 The following services are accessed via MCP protocol:
@@ -121,10 +117,10 @@ TRIAL_REGISTRY_MCP_URL=https://gateway/clinicagent/trial-registry-mcp/v1.0/mcp
 ```
 
 ### Key Features
+- ✅ **MCP Architecture**: Tools are consumed through proper MCP protocol with gateway and JSON-RPC 2.0 - fully cloud-native
+- ✅ **AI Gateway for LLM Egress**: Provide capability to control the LLM call through Egress gateway
 - ✅ **OAuth2 Token Caching**: Reduces authentication overhead (3600s TTL)
-- ✅ **Schema Transformation**: Maps Ballerina MCP format (camelCase, nested objects) to Python format (snake_case, flat values)
-- ✅ **JSON-RPC 2.0**: Proper MCP protocol implementation
-- ✅ **MCP-Only Architecture**: No Python backend dependencies - fully cloud-native
+- ✅ **Schema Transformation**: Maps MCP format (camelCase, nested objects) to Python format (snake_case, flat values)
 - ✅ **Detailed Logging**: Comprehensive JSON-RPC request/response logging for debugging
 
 ## FHIR Relevance
