@@ -226,7 +226,7 @@ export default function HomePage() {
     setStatusBanner('');
     const patientId = derivePatientId(prompt);
     setResolvedPatientId(patientId);
-    pushStatus('NovigiHealth Planner', `Reviewing request for patient ${patientId}…`);
+    pushStatus('NovigiHealth Planner', 'Reviewing clinical request…');
     pushStatus('Care-Plan Agent', 'Contacting orchestrator…');
     setPlanCard(null);
     setLabs(null);
@@ -260,7 +260,7 @@ export default function HomePage() {
         const message = labError instanceof Error ? labError.message : 'Unable to load labs';
         pushStatus('EHR MCP', message, 'error');
       }
-      pushStatus('NovigiHealth Planner', `Resolved patient context as ${patientId}.`, 'info');
+      pushStatus('NovigiHealth Planner', 'Clinical context resolved successfully.', 'info');
     } catch (err: unknown) {
       console.error(err);
       const message = err instanceof Error ? err.message : 'Something went wrong';
@@ -400,7 +400,7 @@ export default function HomePage() {
                   <p className="muted">{planCard.rationale}</p>
                   {resolvedPatientId ? (
                     <p className="muted">
-                      Working patient context: <strong>{resolvedPatientId}</strong>
+                      Patient reference: <strong>{resolvedPatientId}</strong>
                     </p>
                   ) : null}
                   {planCard.llm_model ? (
@@ -510,7 +510,7 @@ export default function HomePage() {
                   <h3>Nearby / Relevant Trials</h3>
                   {resolvedPatientId ? (
                     <p className="muted">
-                      Patient context: <strong>{resolvedPatientId}</strong>
+                      Patient reference: <strong>{resolvedPatientId}</strong>
                     </p>
                   ) : null}
                   {evidence.evidence_pack.llm_model ? (
