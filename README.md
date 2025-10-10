@@ -24,6 +24,19 @@ The following services are accessed via MCP protocol:
 - MCP Tools: `get`, `getTrialid`, `post`
 - Authentication: OAuth2 client credentials flow
 
+## Agent Responsibilities
+1. **Planner (Care-Plan) Agent**
+   - Pulls patient context from the EHR platform (labs such as A1c, renal function, current medications).
+   - Identifies the clinician’s intent (care-plan vs. research question) and routes the workflow accordingly.
+   - Delegates evidence gathering to the Evidence Agent when building a full care plan.
+2. **Evidence Agent**
+   - Finds and summarizes relevant trials and guideline snippets through the Trial Registry MCP server.
+   - Returns a structured `evidence_pack` that captures trial suitability, benefit, and risk signals.
+3. **Planner Agent + LLM (via Gateway)**
+   - Synthesizes the data into a structured JSON `plan_card` (recommendation, rationale, safety checks, orders, citations).
+   - Falls back to heuristic defaults when the upstream LLM call times out or is disabled.
+   - Produces a trial-focused plan when the incoming question is solely about research enrollment.
+
 ### Evidence Agent
 1. `cp evidence-agent/.env.example evidence-agent/.env`
 2. `pip install -r evidence-agent/requirements.txt`
@@ -36,10 +49,9 @@ The following services are accessed via MCP protocol:
 2. `pip install -r care-plan-agent/requirements.txt`
 3. `uvicorn app:app --app-dir care-plan-agent --reload --port 8004`
 
-`POST /agents/care-plan/recommendation` orchestrates the workflow:
-1. `GET /patients/{id}/summary` from the EHR service.
-2. `POST /agents/evidence/search` to the Evidence Agent.
-3. Mock LLM drafting of a plan card (recommendation, safety, orders, citations, trial matches).
+`POST /agents/care-plan/recommendation` now supports two paths:
+- **Full care-plan route** – Detects a clinical management question, fetches EHR context via MCP, asks the Evidence Agent for ranked trials, then drafts a plan card with the LLM (falling back to heuristics on timeout).
+- **Trial-only route** – Detects research-only questions, queries the Trial Registry MCP directly (LLM-assisted parameter mapping), and synthesizes a trial-focused plan card without the Evidence Agent.
 
 Example request:
 ```json
@@ -114,15 +126,6 @@ TRIAL_REGISTRY_MCP_URL=https://gateway/clinicagent/trial-registry-mcp/v1.0/mcp
 - ✅ **JSON-RPC 2.0**: Proper MCP protocol implementation
 - ✅ **MCP-Only Architecture**: No Python backend dependencies - fully cloud-native
 - ✅ **Detailed Logging**: Comprehensive JSON-RPC request/response logging for debugging
-
-### Documentation
-- [`EHR_BACKEND_COMPARISON.md`](EHR_BACKEND_COMPARISON.md) - Schema differences between backends
-- [`SCHEMA_TRANSFORMATION_SUMMARY.md`](SCHEMA_TRANSFORMATION_SUMMARY.md) - Transformation implementation details
-- [`MCP_INTEGRATION.md`](MCP_INTEGRATION.md) - MCP setup guide
-- [`MCP_CHANGES_SUMMARY.md`](MCP_CHANGES_SUMMARY.md) - Code changes summary
-- [`MCP_ONLY_CHANGES.md`](MCP_ONLY_CHANGES.md) - Fallback removal and MCP-only architecture
-- [`MCP_DETAILED_LOGGING.md`](MCP_DETAILED_LOGGING.md) - JSON-RPC request/response logging
-- [`ENHANCED_REASONING_LOGS.md`](ENHANCED_REASONING_LOGS.md) - Workflow decision logging
 
 ## FHIR Relevance
 - **EHR Service** — could emit FHIR `Patient`, `Condition`, `Observation`, and `MedicationRequest` resources instead of ad-hoc JSON.
