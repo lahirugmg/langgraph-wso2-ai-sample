@@ -1114,23 +1114,52 @@ def llm_plan_card(state: CarePlanState) -> CarePlanState:
     logger.info("   • Expected Output: Structured JSON with recommendation, rationale, orders, citations")
     logger.info("-" * 100)
 
+    # Simplify patient summary to reduce token count and LLM processing time
+    demographics = summary.get("demographics", {})
+    simplified_summary = {
+        "age": demographics.get("age"),
+        "gender": demographics.get("gender"),
+        "problems": summary.get("problems", []),
+        "current_medications": summary.get("medications", []),
+        "a1c": summary.get("last_a1c"),
+        "egfr": summary.get("last_egfr"),
+    }
+    
+    # Simplify evidence pack to only essential trial information
+    analyses = evidence_pack.get("analyses", [])
+    trials = evidence_pack.get("trials", [])
+    
+    simplified_evidence = {
+        "top_trials": [
+            {
+                "title": t.get("title"),
+                "grade": a.get("grade"),
+                "summary": a.get("overall_summary", "")[:200],  # Limit summary length
+            }
+            for t, a in zip(trials[:2], analyses[:2])  # Only top 2 trials
+        ] if trials and analyses else []
+    }
+
+    logger.info("🔄 Simplified input for LLM:")
+    logger.info("   Original size: ~%d + ~%d chars", len(str(summary)), len(str(evidence_pack)))
+    logger.info("   Simplified size: ~%d + ~%d chars", len(str(simplified_summary)), len(str(simplified_evidence)))
+
     messages = [
         {
             "role": "system",
             "content": (
-                "You are a clinical decision support assistant. Respond ONLY with JSON "
-                "containing a key 'plan_card'. The plan card must include recommendation, "
-                "rationale, alternatives (array), safety_checks (array), orders (medication+labs), "
-                "citations (array of objects), trial_matches (array of objects), and optional "
-                "evidence_highlights."
+                "You are a clinical decision support assistant. Respond with JSON containing a 'plan_card' key. "
+                "The plan_card must include: recommendation (string), rationale (string), alternatives (array), "
+                "safety_checks (array), orders (object with medication and labs), citations (array), "
+                "trial_matches (array). Be concise."
             ),
         },
         {
             "role": "user",
             "content": json.dumps(
                 {
-                    "patient_summary": summary,
-                    "evidence_pack": evidence_pack,
+                    "patient": simplified_summary,
+                    "evidence": simplified_evidence,
                 },
                 default=str,
             ),
