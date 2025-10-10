@@ -75,6 +75,8 @@ type PlanResponse = {
   plan_card: PlanCard;
 };
 
+const PATIENT_FALLBACK_ID = '12873';
+
 type StatusEntry = {
   agent: string;
   message: string;
@@ -83,7 +85,7 @@ type StatusEntry = {
 };
 
 const DEFAULT_QUESTION =
-  'Add-on to metformin for T2D with CKD stage 3; show supporting evidence and local recruiting trials.';
+  'Mrs. J is a 62 y/o with T2D + CKD stage 3 on metformin. Suggest the safest add-on, check contraindications, outline monitoring, and surface any local trials she might qualify for.';
 
 const formatDate = (value?: string) => {
   if (!value) return 'n/a';
@@ -95,6 +97,18 @@ const formatTimestamp = (iso: string) => {
   const dt = new Date(iso);
   if (Number.isNaN(dt.getTime())) return iso;
   return dt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+};
+
+const derivePatientId = (prompt: string): string => {
+  const numeric = prompt.match(/\bpatient(?:\s*(?:id|#))?\s*(\d{3,})\b/i);
+  if (numeric?.[1]) {
+    return numeric[1];
+  }
+  const standalone = prompt.match(/\b(\d{5,})\b/);
+  if (standalone?.[1]) {
+    return standalone[1];
+  }
+  return PATIENT_FALLBACK_ID;
 };
 
 const examplePrompts = [
@@ -135,8 +149,8 @@ const renderList = (items?: string[]) => {
 };
 
 export default function HomePage() {
-  const [patientId, setPatientId] = useState('12873');
-  const [question, setQuestion] = useState(DEFAULT_QUESTION);
+  const [prompt, setPrompt] = useState(DEFAULT_QUESTION);
+  const [resolvedPatientId, setResolvedPatientId] = useState<string | null>(null);
   const [planCard, setPlanCard] = useState<PlanCard | null>(null);
   const [labs, setLabs] = useState<LabResponse | null>(null);
   const [evidence, setEvidence] = useState<EvidenceResponse | null>(null);
@@ -178,6 +192,7 @@ export default function HomePage() {
     pushStatus('Evidence Agent', 'Fetching evidence pack…');
 
     try {
+      setResolvedPatientId(id);
       const response = await fetch('/api/evidence', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -209,6 +224,8 @@ export default function HomePage() {
     setIsLoading(true);
     setStatusLog([]);
     setStatusBanner('');
+    const patientId = derivePatientId(prompt);
+    setResolvedPatientId(patientId);
     pushStatus('NovigiHealth Planner', `Reviewing request for patient ${patientId}…`);
     pushStatus('Care-Plan Agent', 'Contacting orchestrator…');
     setPlanCard(null);
@@ -221,7 +238,7 @@ export default function HomePage() {
         body: JSON.stringify({
           user_id: 'dr_patel',
           patient_id: patientId,
-          question,
+          question: prompt,
         }),
       });
 
@@ -243,6 +260,7 @@ export default function HomePage() {
         const message = labError instanceof Error ? labError.message : 'Unable to load labs';
         pushStatus('EHR MCP', message, 'error');
       }
+      pushStatus('NovigiHealth Planner', `Resolved patient context as ${patientId}.`, 'info');
     } catch (err: unknown) {
       console.error(err);
       const message = err instanceof Error ? err.message : 'Something went wrong';
@@ -288,33 +306,27 @@ export default function HomePage() {
       </section>
 
       <section className="card">
-        <h2>Request a Plan</h2>
+        <h2>Ask NovigiHealth</h2>
+        <p className="muted">
+          Describe the patient and what you need. The NovigiHealth agents will discover MCP tools,
+          gather evidence, and synthesize an answer.
+        </p>
         <form onSubmit={handleSubmit}>
-          <label htmlFor="patient-id">
-            Patient ID
-            <input
-              id="patient-id"
-              name="patient_id"
-              value={patientId}
-              onChange={(event) => setPatientId(event.target.value)}
-              required
-            />
-          </label>
-
-          <label htmlFor="question">
-            Question for the agent
+          <label htmlFor="prompt">
+            What would you like the agents to do?
             <textarea
-              id="question"
-              name="question"
-              rows={3}
-              value={question}
-              onChange={(event) => setQuestion(event.target.value)}
+              id="prompt"
+              name="prompt"
+              rows={4}
+              value={prompt}
+              placeholder="Example: For my 68 y/o with CKD stage 3 on metformin, propose escalation, check contraindications, and surface nearby SGLT2 trials."
+              onChange={(event) => setPrompt(event.target.value)}
               required
             />
           </label>
 
           <button type="submit" disabled={isLoading}>
-            {isLoading ? 'Generating…' : 'Generate Plan Card'}
+            {isLoading ? 'Working…' : 'Run NovigiHealth Agents'}
           </button>
         </form>
         {statusBanner ? (
@@ -368,7 +380,10 @@ export default function HomePage() {
           </button>
           <button
             type="button"
-            onClick={() => fetchEvidence(patientId)}
+            onClick={() => {
+              const id = resolvedPatientId ?? PATIENT_FALLBACK_ID;
+              fetchEvidence(id);
+            }}
             disabled={isEvidenceLoading}
           >
             {isEvidenceLoading ? 'Loading evidence…' : 'Refresh evidence tab'}
@@ -383,6 +398,11 @@ export default function HomePage() {
                   <h3>Recommendation</h3>
                   <p>{planCard.recommendation}</p>
                   <p className="muted">{planCard.rationale}</p>
+                  {resolvedPatientId ? (
+                    <p className="muted">
+                      Working patient context: <strong>{resolvedPatientId}</strong>
+                    </p>
+                  ) : null}
                   {planCard.llm_model ? (
                     <p className="muted">
                       Generated with {planCard.llm_model}{' '}
@@ -488,6 +508,11 @@ export default function HomePage() {
               <>
                 <section className="plan-section">
                   <h3>Nearby / Relevant Trials</h3>
+                  {resolvedPatientId ? (
+                    <p className="muted">
+                      Patient context: <strong>{resolvedPatientId}</strong>
+                    </p>
+                  ) : null}
                   {evidence.evidence_pack.llm_model ? (
                     <p className="muted">
                       Evidence graded with {evidence.evidence_pack.llm_model}{' '}

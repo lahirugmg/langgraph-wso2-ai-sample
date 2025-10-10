@@ -10,7 +10,7 @@ from typing import Any, Dict, List, Optional, TypedDict
 
 import requests
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from langgraph.graph import END, StateGraph
 from pydantic import BaseModel, Field
@@ -146,6 +146,28 @@ def _get_access_token() -> Optional[str]:
         return None
 
 
+def _log_llm_gateway_request(url: str, headers: Dict[str, str], payload: Dict[str, Any]) -> None:
+    """Log sanitized details for outbound LLM calls via the API Manager gateway."""
+    redacted_headers: Dict[str, Any] = {}
+    for key, value in headers.items():
+        if key.lower() == "authorization":
+            token_len = len(value)
+            redacted_headers[key] = f"Bearer <redacted len={token_len}>"
+        else:
+            redacted_headers[key] = value
+
+    try:
+        serialized = json.dumps(payload)
+    except (TypeError, ValueError):
+        serialized = str(payload)
+    preview = serialized[:800] + ("..." if len(serialized) > 800 else "")
+
+    logger.info("LLM Gateway request details:")
+    logger.info("  URL: %s", url)
+    logger.info("  Headers: %s", json.dumps(redacted_headers, indent=2))
+    logger.info("  Payload preview: %s", preview)
+
+
 def _call_llm(messages: List[dict[str, str]]) -> Optional[str]:
     if not API_MANAGER_CHAT_ENDPOINT:
         logger.info("API Manager not configured; skipping LLM plan drafting")
@@ -176,25 +198,23 @@ def _call_llm(messages: List[dict[str, str]]) -> Optional[str]:
         logger.info("")
     logger.info("-" * 80)
     
-    headers = {
-        "Authorization": f"Bearer {access_token[:20]}..." if len(access_token) > 20 else "Bearer ***",
-        "Content-Type": "application/json",
-    }
     payload = {
         "model": OPENAI_MODEL,
         "messages": messages,
         "response_format": {"type": "json_object"},
     }
+    request_headers = {
+        "Authorization": f"Bearer {access_token}",
+        "Content-Type": "application/json",
+    }
+    _log_llm_gateway_request(API_MANAGER_CHAT_ENDPOINT, request_headers, payload)
 
     try:
         logger.info("⏳ Sending request to LLM API...")
         start_time = __import__('time').time()
         response = requests.post(
             API_MANAGER_CHAT_ENDPOINT,
-            headers={
-                "Authorization": f"Bearer {access_token}",
-                "Content-Type": "application/json",
-            },
+            headers=request_headers,
             json=payload,
             timeout=180,
         )
@@ -570,6 +590,101 @@ def _transform_mcp_to_python_format(mcp_data: Dict[str, Any]) -> Dict[str, Any]:
         logger.error("✗ Failed to transform MCP response: %s", e)
         logger.exception("Transformation error details:")
         return mcp_data  # Return original if transformation fails
+
+
+def _fetch_patient_labs_from_mcp(
+    patient_id: str,
+    names: Optional[str] = None,
+    last_n: Optional[int] = None,
+) -> Dict[str, Any]:
+    if not EHR_MCP_URL:
+        raise RuntimeError("EHR_MCP_URL is not configured")
+
+    logger.info("🔬 Fetching lab history for patient_id=%s via MCP", patient_id)
+    available_tools = _list_mcp_tools(EHR_MCP_URL, "ehr")
+    if not available_tools:
+        raise RuntimeError("Failed to discover EHR MCP tools for labs retrieval")
+
+    tool = next(
+        (item for item in available_tools if item.get("name") == "get_patients_by_patient_id_labs"),
+        None,
+    )
+    if not tool:
+        tool = _find_best_mcp_tool(
+            available_tools,
+            purpose="Retrieve lab history for a patient",
+            keywords=["lab", "labs", "observation"],
+        )
+
+    if not tool:
+        raise RuntimeError("No suitable MCP tool found for retrieving patient labs")
+
+    input_schema = tool.get("inputSchema", {})
+    properties = input_schema.get("properties", {})
+    required_params = input_schema.get("required", [])
+
+    patient_param = None
+    for candidate in properties.keys():
+        if "patient" in candidate.lower() and "id" in candidate.lower():
+            patient_param = candidate
+            break
+    if not patient_param and required_params:
+        patient_param = required_params[0]
+    if not patient_param:
+        patient_param = "patient_id"
+
+    arguments: Dict[str, Any] = {patient_param: patient_id}
+    if names and "names" in properties:
+        arguments["names"] = names
+    if last_n is not None and "last_n" in properties:
+        try:
+            arguments["last_n"] = int(last_n)
+        except (TypeError, ValueError):
+            pass
+
+    result = _call_mcp_tool(EHR_MCP_URL, tool.get("name", ""), arguments)
+    if not result:
+        raise RuntimeError("MCP labs call returned no result")
+
+    content = result.get("content", [])
+    if not content or not isinstance(content, list):
+        raise RuntimeError("Invalid MCP labs response structure")
+
+    text_content = content[0].get("text", "")
+    if not text_content:
+        raise RuntimeError("Empty labs payload from MCP")
+
+    try:
+        payload = json.loads(text_content)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError("Failed to parse labs payload from MCP") from exc
+
+    labs_in = payload.get("labs") or []
+    labs_out: List[Dict[str, Any]] = []
+    for entry in labs_in:
+        if not isinstance(entry, dict):
+            continue
+        raw_value = entry.get("value")
+        try:
+            numeric_value = float(raw_value) if raw_value is not None else None
+        except (TypeError, ValueError):
+            numeric_value = None
+
+        labs_out.append(
+            {
+                "lab_id": entry.get("labId"),
+                "name": entry.get("name"),
+                "value": numeric_value,
+                "unit": entry.get("unit"),
+                "status": entry.get("status"),
+                "reference_range": entry.get("referenceRange"),
+                "collected_at": entry.get("recordDate"),
+            }
+        )
+
+    patient_out = payload.get("patientId") or patient_id
+    logger.info("✓ Retrieved %d lab results for patient_id=%s", len(labs_out), patient_out)
+    return {"patient_id": patient_out, "labs": labs_out}
 
 
 def fetch_patient_summary(state: CarePlanState) -> CarePlanState:
@@ -989,7 +1104,7 @@ def llm_plan_card(state: CarePlanState) -> CarePlanState:
     logger.info("   2. Generating context-aware, personalized recommendations")
     logger.info("   3. Providing clinical rationale based on evidence")
     logger.info("   4. Suggesting appropriate alternatives and safety checks")
-    logger.info("   Model: %s", OPENAI_MODEL or "gpt-4")
+    logger.info("   Model: %s", OPENAI_MODEL or "gpt-4o-mini")
     logger.info("-" * 100)
     logger.info("📤 INPUT TO LLM:")
     logger.info("   • Patient Summary: Demographics, diagnoses, medications, labs")
@@ -1156,6 +1271,21 @@ class LabOrderModel(BaseModel):
     due_in_days: int
 
 
+class LabResultModel(BaseModel):
+    lab_id: Optional[str] = Field(None, description="Identifier for the lab result")
+    name: str
+    value: Optional[float] = None
+    unit: Optional[str] = None
+    status: Optional[str] = None
+    reference_range: Optional[str] = None
+    collected_at: Optional[str] = Field(None, description="ISO date when the lab was recorded")
+
+
+class LabResultsResponseModel(BaseModel):
+    patient_id: str
+    labs: List[LabResultModel]
+
+
 class CitationModel(BaseModel):
     type: str
     id: Optional[str] = None
@@ -1208,6 +1338,19 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.get("/patients/{patient_id}/labs", response_model=LabResultsResponseModel)
+def get_patient_labs(
+    patient_id: str,
+    names: Optional[str] = Query(None, description="Comma separated lab names to filter"),
+    last_n: Optional[int] = Query(6, description="Limit to the most recent N results"),
+) -> LabResultsResponseModel:
+    try:
+        data = _fetch_patient_labs_from_mcp(patient_id, names, last_n)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return LabResultsResponseModel(**data)
 
 
 @app.post("/agents/care-plan/recommendation", response_model=CarePlanResponseModel)

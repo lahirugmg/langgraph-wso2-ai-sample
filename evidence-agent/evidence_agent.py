@@ -11,7 +11,7 @@ import logging
 import os
 import re
 from datetime import datetime
-from typing import Any, List, Optional, TypedDict
+from typing import Any, Dict, List, Optional, TypedDict
 
 import requests
 from dotenv import load_dotenv
@@ -494,6 +494,28 @@ def _log_mcp_request(method: str, url: str, headers: Optional[dict[str, str]], p
     )
 
 
+def _log_llm_gateway_request(url: str, headers: dict[str, str], payload: dict[str, Any]) -> None:
+    """Log sanitized details for outbound LLM gateway calls."""
+    redacted_headers: dict[str, Any] = {}
+    for key, value in headers.items():
+        if key.lower() == "authorization":
+            token_len = len(value)
+            redacted_headers[key] = f"Bearer <redacted len={token_len}>"
+        else:
+            redacted_headers[key] = value
+
+    try:
+        serialized = json.dumps(payload)
+    except (TypeError, ValueError):
+        serialized = str(payload)
+    preview = serialized[:800] + ("..." if len(serialized) > 800 else "")
+
+    logger.info("LLM Gateway request details:")
+    logger.info("  URL: %s", url)
+    logger.info("  Headers: %s", json.dumps(redacted_headers, indent=2))
+    logger.info("  Payload preview: %s", preview)
+
+
 def _call_llm(messages: List[dict[str, str]]) -> Optional[str]:
     """Call a chat-completions style LLM endpoint if credentials exist.
 
@@ -530,22 +552,23 @@ def _call_llm(messages: List[dict[str, str]]) -> Optional[str]:
         logger.info("")
     logger.info("-" * 80)
     
-    headers = {
-        "Authorization": f"Bearer {access_token}",
-        "Content-Type": "application/json",
-    }
     payload = {
         "model": OPENAI_MODEL,
         "messages": messages,
         "response_format": {"type": "json_object"},
     }
+    request_headers = {
+        "Authorization": f"Bearer {access_token}",
+        "Content-Type": "application/json",
+    }
+    _log_llm_gateway_request(API_MANAGER_CHAT_ENDPOINT, request_headers, payload)
 
     try:
         logger.info("⏳ Sending request to LLM API...")
         start_time = __import__('time').time()
         response = requests.post(
             API_MANAGER_CHAT_ENDPOINT,
-            headers=headers,
+            headers=request_headers,
             json=payload,
             timeout=180,
         )
