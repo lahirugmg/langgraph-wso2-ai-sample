@@ -1,0 +1,129 @@
+INFO:     Started server process [248]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8003 (Press CTRL+C to quit)
+2025-10-11 07:59:52,466 [INFO] evidence-agent: Received evidence request: diagnosis=Type 2 Diabetes Mellitus age=45 egfr=85.0
+2025-10-11 07:59:52,468 [INFO] evidence-agent: Fetching trials for diagnosis=Type 2 Diabetes Mellitus egfr=85.0 (radius=25.0) via MCP
+2025-10-11 07:59:52,468 [INFO] evidence-agent: Using Trial Registry MCP server: https://e8f34e4e-e9bb-4799-b725-7173d271fa62-prod.e1-us-east-azure.bijiraapis.dev/lahiru/trials-mcp-server/v1.0/mcp
+2025-10-11 07:59:52,469 [INFO] evidence-agent: Requesting MCP gateway token from https://e8f34e4e-e9bb-4799-b725-7173d271fa62-prod.e1-us-east-azure.choreosts.dev/oauth2/token
+2025-10-11 07:59:52,642 [INFO] evidence-agent: MCP gateway token response status: 200
+2025-10-11 07:59:52,643 [INFO] evidence-agent: 🔍 Discovering available MCP tools from https://e8f34e4e-e9bb-4799-b725-7173d271fa62-prod.e1-us-east-azure.bijiraapis.dev/lahiru/trials-mcp-server/v1.0/mcp...
+2025-10-11 07:59:52,857 [INFO] evidence-agent: ✅ Discovered 3 MCP tools from trial_registry:
+2025-10-11 07:59:52,857 [INFO] evidence-agent:    • post - 
+2025-10-11 07:59:52,857 [INFO] evidence-agent:    • getTrialid - 
+2025-10-11 07:59:52,857 [INFO] evidence-agent:    • get - 
+2025-10-11 07:59:52,860 [INFO] evidence-agent:    ✗ Skipping: 'post' (requires: requestBody)
+2025-10-11 07:59:52,860 [INFO] evidence-agent:    ✗ Skipping: 'getTrialid' (requires: trialId)
+2025-10-11 07:59:52,860 [INFO] evidence-agent:    ✓ Candidate: 'get' (no required params)
+2025-10-11 07:59:52,860 [INFO] evidence-agent: 🤔 Selecting best tool for purpose: 'Retrieve complete list of all clinical trials for matching patients'
+2025-10-11 07:59:52,860 [INFO] evidence-agent:    Search keywords: get, trials, list, all
+2025-10-11 07:59:52,860 [INFO] evidence-agent:    📊 Candidate: 'get' (score: 10)
+2025-10-11 07:59:52,860 [INFO] evidence-agent: ✅ Selected tool: 'get' - 
+2025-10-11 07:59:52,860 [INFO] evidence-agent: 🔧 SELECTED TOOL: 'get'
+2025-10-11 07:59:52,860 [INFO] evidence-agent:    Description: 
+2025-10-11 07:59:52,860 [INFO] evidence-agent:    WHY THIS TOOL?: Best match for retrieving all clinical trials data
+2025-10-11 07:59:52,860 [INFO] evidence-agent:    Parameters: None (retrieving all trials)
+2025-10-11 07:59:52,860 [INFO] evidence-agent: ================================================================================
+2025-10-11 07:59:52,860 [INFO] evidence-agent: MCP REQUEST - Calling tool 'get' at https://e8f34e4e-e9bb-4799-b725-7173d271fa62-prod.e1-us-east-azure.bijiraapis.dev/lahiru/trials-mcp-server/v1.0/mcp
+2025-10-11 07:59:52,860 [INFO] evidence-agent: JSON-RPC Request Payload:
+2025-10-11 07:59:52,861 [INFO] evidence-agent: {
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "tools/call",
+  "params": {
+    "name": "get",
+    "arguments": {}
+  }
+}
+2025-10-11 07:59:52,861 [INFO] evidence-agent: Request Headers: {
+  "Authorization": "Bearer eyJ4NXQjUzI1NiI6Ik1t...uhVOTFlzMQ",
+  "Content-Type": "application/json"
+}
+2025-10-11 07:59:52,861 [INFO] evidence-agent: --------------------------------------------------------------------------------
+2025-10-11 07:59:53,182 [INFO] evidence-agent: MCP RESPONSE - Status Code: 200
+2025-10-11 07:59:53,182 [INFO] evidence-agent: Response Headers: {
+  "Date": "Sat, 11 Oct 2025 12:59:53 GMT",
+  "Content-Type": "application/json",
+  "Content-Length": "2887",
+  "Connection": "keep-alive",
+  "x-ratelimit-limit": "1000, 1000;w=60",
+  "x-ratelimit-remaining": "998",
+  "x-ratelimit-reset": "7"
+}
+2025-10-11 07:59:53,182 [INFO] evidence-agent: JSON-RPC Response:
+2025-10-11 07:59:53,182 [INFO] evidence-agent: {
+  "jsonrpc": "2.0",
+  "id": 1,
+  "result": {
+    "isError": false,
+    "content": [
+      {
+        "type": "text",
+        "text": "{\"totalCount\":10,\"trials\":[{\"condition\":\"Type 2 diabetes mellitus\",\"distance\":12.4,\"eligibilitySummary\":\"Adults 40-75 with type 2 diabetes and eGFR 45-60\",\"id\":1,\"nctId\":\"NCT05566789\",\"phase\":\"Phase III\",\"status\":\"Recruiting\",\"title\":\"SGLT2i Outcomes in CKD Stage 3\"},{\"condition\":\"Type 2 diabetes mellitus\",\"distance\":14.9,\"eligibilitySummary\":\"T2D adults with eGFR 30-60 on stable metformin\",\"id\":2,\"nctId\":\"NCT07654321\",\"phase\":\"Phase II\",\"status\":\"Recruiting\",\"title\":\"GLP-1 RA Renal Outcomes Registry\"},{\"condition\":\"Hypertension\",\"distance\":52,\"eligibilitySummary\":\"Adults with resistant hypertension\",\"id\":3,\"nctId\":\"NCT09999888\",\"phase\":\"Phase III\",\"status\":\"Completed\",\"title\":\"CardioHealth Outcomes Study\"},{\"condition\":\"Type 1 diabetes mellitus\",\"distance\":8.5,\"eligibilitySummary\":\"Adults 18-65 with Type 1 diabetes on insulin therapy\",\"id\":4,\"nctId\":\"NCT12345678\",\"phase\":\"Phase I\",\"status\":\"Recruiting\",\"title\":\"Novel Diabetes Treatment Study\"},{\"condition\":\"Coronary artery disease\",\"distance\":25.3,\"eligibilitySummary\":\"Adults 50+ with documented CAD and high cholesterol\",\"id\":5,\"nctId\":\"NCT98765432\",\"phase\":\"Phase III\",\"status\":\"Active, not recruiting\",\"title\":\"Cardiovascular Risk Reduction Trial\"},{\"condition\":\"Alzheimer's disease\",\"distance\":32.7,\"eligibilitySummary\":\"Adults 65+ with mild cognitive impairment or early-stage dementia\",\"id\":6,\"nctId\":\"NCT11111111\",\"phase\":\"Phase II\",\"status\":\"Recruiting\",\"title\":\"Alzheimer's Disease Biomarker Study\"},{\"condition\":\"Non-small cell lung cancer\",\"distance\":45.2,\"eligibilitySummary\":\"Adults 18+ with metastatic NSCLC, ECOG 0-1\",\"id\":7,\"nctId\":\"NCT22222222\",\"phase\":\"Phase I/II\",\"status\":\"Recruiting\",\"title\":\"Cancer Immunotherapy Combination Study\"},{\"condition\":\"Asthma\",\"distance\":18.9,\"eligibilitySummary\":\"Children 6-17 with moderate to severe asthma\",\"id\":8,\"nctId\":\"NCT33333333\",\"phase\":\"Phase III\",\"status\":\"Recruiting\",\"title\":\"Pediatric Asthma Management Trial\"},{\"condition\":\"Rheumatoid arthritis\",\"distance\":35.6,\"eligibilitySummary\":\"Adults 18+ with active RA, inadequate response to MTX\",\"id\":9,\"nctId\":\"NCT44444444\",\"phase\":\"Phase III\",\"status\":\"Completed\",\"title\":\"Rheumatoid Arthritis Biologics Study\"},{\"condition\":\"Multiple sclerosis\",\"distance\":28.4,\"eligibilitySummary\":\"Adults 18-55 with relapsing-remitting MS, EDSS 0-5.5\",\"id\":10,\"nctId\":\"NCT55555555\",\"phase\":\"Phase II\",\"status\":\"Recruiting\",\"title\":\"Multiple Sclerosis Progression Study\"}]}"
+      }
+    ]
+  }
+}
+2025-10-11 07:59:53,182 [INFO] evidence-agent: ================================================================================
+2025-10-11 07:59:53,182 [INFO] evidence-agent: ✓ MCP tool 'get' executed successfully
+2025-10-11 07:59:53,185 [INFO] evidence-agent: ✓ Retrieved 10 trials via MCP (totalCount: 10)
+2025-10-11 07:59:53,185 [INFO] evidence-agent: Scored 4 trials; returning top 3
+2025-10-11 07:59:53,186 [INFO] evidence-agent: Preparing LLM grading payload for 3 trials
+2025-10-11 07:59:53,186 [INFO] evidence-agent: Requesting new access token from API Manager endpoint: https://e8f34e4e-e9bb-4799-b725-7173d271fa62-prod.e1-us-east-azure.choreosts.dev/oauth2/token
+2025-10-11 07:59:53,186 [INFO] evidence-agent: Using client_id: zzbJIM6qUx...
+2025-10-11 07:59:53,351 [INFO] evidence-agent: Token endpoint responded with status: 200
+2025-10-11 07:59:53,351 [INFO] evidence-agent: ✓ Access token obtained successfully (expires in 899999 seconds)
+2025-10-11 07:59:53,351 [INFO] evidence-agent: ✓ Token cached for future requests
+2025-10-11 07:59:53,354 [INFO] evidence-agent: ================================================================================
+2025-10-11 07:59:53,355 [INFO] evidence-agent: 🤖 LLM API CALL - Trial Evidence Grading
+2025-10-11 07:59:53,355 [INFO] evidence-agent: ================================================================================
+2025-10-11 07:59:53,355 [INFO] evidence-agent: Endpoint: https://eg-e8f34e4e-e9bb-4799-b725-7173d271fa62-prod.e1-us-east-azure.bijiraapis.dev/lahiru/openai-api/v1.0/chat/completions
+2025-10-11 07:59:53,355 [INFO] evidence-agent: Model: gpt-4o-mini
+2025-10-11 07:59:53,355 [INFO] evidence-agent: Messages: 2
+2025-10-11 07:59:53,355 [INFO] evidence-agent: --------------------------------------------------------------------------------
+2025-10-11 07:59:53,355 [INFO] evidence-agent: 📤 LLM REQUEST PROMPT:
+2025-10-11 07:59:53,355 [INFO] evidence-agent: Message 1 [SYSTEM]:
+2025-10-11 07:59:53,355 [INFO] evidence-agent: You are an evidence synthesis assistant. Respond ONLY with JSON containing an array named 'analyses'. For each trial provide keys: trial_id, pico_grade (high/medium/low), benefit_summary, risk_summary, overall_summary, and optional why_match.
+2025-10-11 07:59:53,355 [INFO] evidence-agent: 
+2025-10-11 07:59:53,355 [INFO] evidence-agent: Message 2 [USER]:
+2025-10-11 07:59:53,355 [INFO] evidence-agent: {"patient": {"age": 45, "diagnosis": "Type 2 Diabetes Mellitus", "egfr": 85.0, "comorbidities": ["Hypertension"], "geo": {"lat": 35.15, "lon": -90.05, "radius_km": 25.0}}, "trials": [{"id": 2, "nct_id": "NCT07654321", "title": "GLP-1 RA Renal Outcomes Registry", "condition": "Type 2 diabetes mellitus", "phase": "Phase II", "status": "Recruiting", "site_distance_km": 14.9, "suitability": 2.8, "why_match": "T2D adults with eGFR 30-60 on stable metformin"}, {"id": 1, "nct_id": "NCT05566789", "title... [truncated, total 1014 chars]
+2025-10-11 07:59:53,355 [INFO] evidence-agent: 
+2025-10-11 07:59:53,355 [INFO] evidence-agent: --------------------------------------------------------------------------------
+2025-10-11 07:59:53,355 [INFO] evidence-agent: LLM Gateway request details:
+2025-10-11 07:59:53,355 [INFO] evidence-agent:   URL: https://eg-e8f34e4e-e9bb-4799-b725-7173d271fa62-prod.e1-us-east-azure.bijiraapis.dev/lahiru/openai-api/v1.0/chat/completions
+2025-10-11 07:59:53,355 [INFO] evidence-agent:   Headers: {
+  "Authorization": "Bearer <redacted len=1096>",
+  "Content-Type": "application/json"
+}
+2025-10-11 07:59:53,355 [INFO] evidence-agent:   Payload preview: {"model": "gpt-4o-mini", "messages": [{"role": "system", "content": "You are an evidence synthesis assistant. Respond ONLY with JSON containing an array named 'analyses'. For each trial provide keys: trial_id, pico_grade (high/medium/low), benefit_summary, risk_summary, overall_summary, and optional why_match."}, {"role": "user", "content": "{\"patient\": {\"age\": 45, \"diagnosis\": \"Type 2 Diabetes Mellitus\", \"egfr\": 85.0, \"comorbidities\": [\"Hypertension\"], \"geo\": {\"lat\": 35.15, \"lon\": -90.05, \"radius_km\": 25.0}}, \"trials\": [{\"id\": 2, \"nct_id\": \"NCT07654321\", \"title\": \"GLP-1 RA Renal Outcomes Registry\", \"condition\": \"Type 2 diabetes mellitus\", \"phase\": \"Phase II\", \"status\": \"Recruiting\", \"site_distance_km\": 14.9, \"suitability\": 2.8, \"why_match...
+2025-10-11 07:59:53,355 [INFO] evidence-agent: ⏳ Sending request to LLM API (attempt 1/3)...
+2025-10-11 08:00:00,606 [INFO] evidence-agent: 📥 LLM API responded with status: 200 (took 7.25s)
+2025-10-11 08:00:00,607 [INFO] evidence-agent: --------------------------------------------------------------------------------
+2025-10-11 08:00:00,607 [INFO] evidence-agent: 📥 LLM RESPONSE:
+2025-10-11 08:00:00,607 [INFO] evidence-agent: {
+  "analyses": [
+    {
+      "trial_id": 2,
+      "pico_grade": "medium",
+      "benefit_summary": "The trial is focused on renal outcomes in T2D patients with moderate renal impairment, indicating potential benefits in kidney health.",
+      "risk_summary": "The intervention may have risks associated with GLP-1 receptor agonists, including gastrointestinal side effects.",
+      "overall_summary": "This trial may provide important insights into managing renal outcomes in patients with Type 2 diabetes and moderate kidney function."
+    },
+    {
+      "trial_id": 1,
+      "pico_grade": "high",
+      "benefit_summary": "The trial investigates the impact of SGLT2 inhibitors, which have shown significant renal and cardiovascular benefits in similar populations.",
+      "risk_summary": "Common risks include urinary tract infections, dehydration, and hypoglycemia, although serious adverse events are generally low.",
+      "overall_summary": "Given the patient profile, this trial is highly re... [truncated, total 1588 chars]
+2025-10-11 08:00:00,607 [INFO] evidence-agent: --------------------------------------------------------------------------------
+2025-10-11 08:00:00,607 [INFO] evidence-agent: 📊 Token Usage:
+2025-10-11 08:00:00,607 [INFO] evidence-agent:   • Prompt tokens: 430
+2025-10-11 08:00:00,607 [INFO] evidence-agent:   • Completion tokens: 331
+2025-10-11 08:00:00,607 [INFO] evidence-agent:   • Total tokens: 761
+2025-10-11 08:00:00,607 [INFO] evidence-agent: ✓ Trial grading completed successfully
+2025-10-11 08:00:00,608 [INFO] evidence-agent: ================================================================================
+2025-10-11 08:00:00,608 [INFO] evidence-agent: 
+2025-10-11 08:00:00,609 [INFO] evidence-agent: Parsed LLM grading payload keys=['analyses']
+2025-10-11 08:00:00,609 [INFO] evidence-agent: Returning evidence pack with 3 analyses and 3 trials
+2025-10-11 08:00:00,609 [INFO] evidence-agent: Evidence response ready (llm_model=gpt-4o-mini)
+INFO:     127.0.0.1:59262 - "POST /agents/evidence/search HTTP/1.1" 200 OK

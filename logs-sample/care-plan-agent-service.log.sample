@@ -1,0 +1,311 @@
+INFO:     Started server process [249]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8004 (Press CTRL+C to quit)
+2025-10-11 07:59:32,342 [INFO] care-plan-agent: ====================================================================================================
+2025-10-11 07:59:32,342 [INFO] care-plan-agent: 🔍 STEP 1: FETCH PATIENT SUMMARY
+2025-10-11 07:59:32,342 [INFO] care-plan-agent: ====================================================================================================
+2025-10-11 07:59:32,342 [INFO] care-plan-agent: 📋 REASON: Need comprehensive patient data (demographics, conditions, labs, medications)
+2025-10-11 07:59:32,342 [INFO] care-plan-agent:            to make informed clinical decisions about care plan recommendations
+2025-10-11 07:59:32,342 [INFO] care-plan-agent: 👤 Patient ID: 12873
+2025-10-11 07:59:32,342 [INFO] care-plan-agent: ----------------------------------------------------------------------------------------------------
+2025-10-11 07:59:32,342 [INFO] care-plan-agent: 🌐 EHR MCP Endpoint: https://e8f34e4e-e9bb-4799-b725-7173d271fa62-prod.e1-us-east-azure.bijiraapis.dev/lahiru/ehr-mcp-server/v1.0/mcp
+2025-10-11 07:59:32,342 [INFO] care-plan-agent: Requesting new MCP access token from endpoint: https://e8f34e4e-e9bb-4799-b725-7173d271fa62-prod.e1-us-east-azure.choreosts.dev/oauth2/token
+2025-10-11 07:59:32,687 [INFO] care-plan-agent: MCP token endpoint responded with status: 200
+2025-10-11 07:59:32,687 [INFO] care-plan-agent: ✓ MCP access token obtained successfully (expires in 899999 seconds)
+2025-10-11 07:59:32,690 [INFO] care-plan-agent: 🔍 Discovering available MCP tools from https://e8f34e4e-e9bb-4799-b725-7173d271fa62-prod.e1-us-east-azure.bijiraapis.dev/lahiru/ehr-mcp-server/v1.0/mcp...
+2025-10-11 07:59:33,057 [INFO] care-plan-agent: ✅ Discovered 3 MCP tools from ehr:
+2025-10-11 07:59:33,069 [INFO] care-plan-agent:    • get_patients_by_patient_id_summary - Retrieve patient summary
+2025-10-11 07:59:33,069 [INFO] care-plan-agent:    • get_patients_by_patient_id_labs - Retrieve lab history
+2025-10-11 07:59:33,069 [INFO] care-plan-agent:    • post_orders_medication - Create draft medication order
+2025-10-11 07:59:33,070 [INFO] care-plan-agent: 🤔 Selecting best tool for purpose: 'Retrieve comprehensive patient summary including demographics, conditions, medications, and labs'
+2025-10-11 07:59:33,070 [INFO] care-plan-agent:    Search keywords: patient, summary, get
+2025-10-11 07:59:33,070 [INFO] care-plan-agent:    📊 Candidate: 'get_patients_by_patient_id_summary' (score: 40)
+2025-10-11 07:59:33,070 [INFO] care-plan-agent: ✅ Selected tool: 'get_patients_by_patient_id_summary' - Retrieve patient summary
+2025-10-11 07:59:33,070 [INFO] care-plan-agent: 🔧 SELECTED TOOL: 'get_patients_by_patient_id_summary'
+2025-10-11 07:59:33,070 [INFO] care-plan-agent:    Description: Retrieve patient summary
+2025-10-11 07:59:33,071 [INFO] care-plan-agent:    WHY THIS TOOL?: Best match for retrieving patient summary data
+2025-10-11 07:59:33,071 [INFO] care-plan-agent:    Parameter mapping: 'patient_id' = '12873'
+2025-10-11 07:59:33,071 [INFO] care-plan-agent: Using cached MCP access token (valid for 899998 more seconds)
+2025-10-11 07:59:33,071 [INFO] care-plan-agent: ================================================================================
+2025-10-11 07:59:33,071 [INFO] care-plan-agent: MCP REQUEST - Calling tool 'get_patients_by_patient_id_summary' at https://e8f34e4e-e9bb-4799-b725-7173d271fa62-prod.e1-us-east-azure.bijiraapis.dev/lahiru/ehr-mcp-server/v1.0/mcp
+2025-10-11 07:59:33,071 [INFO] care-plan-agent: JSON-RPC Request Payload:
+2025-10-11 07:59:33,071 [INFO] care-plan-agent: {
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "tools/call",
+  "params": {
+    "name": "get_patients_by_patient_id_summary",
+    "arguments": {
+      "patient_id": "12873"
+    }
+  }
+}
+2025-10-11 07:59:33,071 [INFO] care-plan-agent: Request Headers: {
+  "Authorization": "Bearer eyJ4NXQjUzI1NiI6Ik1t...iFBuk299SA",
+  "Content-Type": "application/json"
+}
+2025-10-11 07:59:33,091 [INFO] care-plan-agent: --------------------------------------------------------------------------------
+2025-10-11 07:59:52,442 [INFO] care-plan-agent: MCP RESPONSE - Status Code: 200
+2025-10-11 07:59:52,443 [INFO] care-plan-agent: Response Headers: {
+  "Date": "Sat, 11 Oct 2025 12:59:52 GMT",
+  "Content-Type": "application/json",
+  "Content-Length": "1547",
+  "Connection": "keep-alive"
+}
+2025-10-11 07:59:52,443 [INFO] care-plan-agent: JSON-RPC Response:
+2025-10-11 07:59:52,443 [INFO] care-plan-agent: {
+  "jsonrpc": "2.0",
+  "id": 1,
+  "result": {
+    "isError": false,
+    "content": [
+      {
+        "type": "text",
+        "text": "{\"demographics\":{\"address\":\"123 Main St, Anytown, ST 12345\",\"dateOfBirth\":\"1980-05-15\",\"email\":\"john.doe@email.com\",\"firstName\":\"John\",\"gender\":\"Male\",\"lastName\":\"Doe\",\"patientId\":\"12873\",\"phone\":\"(555) 123-4567\"},\"lastA1c\":{\"labId\":\"L001\",\"name\":\"A1c\",\"recordDate\":\"2024-01-10\",\"referenceRange\":\"<7.0\",\"status\":\"abnormal\",\"unit\":\"%\",\"value\":7.2},\"lastEgfr\":{\"labId\":\"L002\",\"name\":\"eGFR\",\"recordDate\":\"2024-01-10\",\"referenceRange\":\">60\",\"status\":\"normal\",\"unit\":\"mL/min/1.73m\u00b2\",\"value\":85},\"medications\":[{\"dosage\":\"500mg\",\"frequency\":\"twice daily\",\"medicationId\":\"M001\",\"name\":\"Metformin\",\"prescribedDate\":\"2020-03-15\",\"status\":\"active\"},{\"dosage\":\"10mg\",\"frequency\":\"once daily\",\"medicationId\":\"M002\",\"name\":\"Lisinopril\",\"prescribedDate\":\"2019-08-22\",\"status\":\"active\"}],\"problems\":[{\"description\":\"Type 2 Diabetes Mellitus\",\"onsetDate\":\"2020-03-15\",\"problemId\":\"P001\",\"severity\":\"moderate\",\"status\":\"active\"},{\"description\":\"Hypertension\",\"onsetDate\":\"2019-08-22\",\"problemId\":\"P002\",\"severity\":\"mild\",\"status\":\"active\"}],\"vitals\":[{\"bloodPressureDiastolic\":85,\"bloodPressureSystolic\":135,\"heartRate\":72,\"height\":70,\"recordDate\":\"2024-01-15\",\"temperature\":98.6,\"weight\":180.5}]}"
+      }
+    ]
+  }
+}
+2025-10-11 07:59:52,443 [INFO] care-plan-agent: ================================================================================
+2025-10-11 07:59:52,443 [INFO] care-plan-agent: ✓ MCP tool 'get_patients_by_patient_id_summary' executed successfully
+2025-10-11 07:59:52,444 [INFO] care-plan-agent: ✓ Raw MCP response received for patient_id=12873
+2025-10-11 07:59:52,444 [INFO] care-plan-agent: 🔄 Transforming MCP response from Ballerina format to Python format
+2025-10-11 07:59:52,447 [INFO] care-plan-agent: ✓ Transformed MCP response: last_a1c=7.2, last_egfr=85, problems=2, medications=2
+2025-10-11 07:59:52,447 [INFO] care-plan-agent: ✅ STEP 1 COMPLETE: Patient summary successfully retrieved
+2025-10-11 07:59:52,447 [INFO] care-plan-agent: 📊 KEY CLINICAL DATA EXTRACTED:
+2025-10-11 07:59:52,447 [INFO] care-plan-agent:    • Age: 45 years
+2025-10-11 07:59:52,447 [INFO] care-plan-agent:    • Active Problems: Type 2 Diabetes Mellitus, Hypertension
+2025-10-11 07:59:52,447 [INFO] care-plan-agent:    • Current Medications: Metformin 500mg twice daily, Lisinopril 10mg once daily
+2025-10-11 07:59:52,447 [INFO] care-plan-agent:    • HbA1c: 7.2%
+2025-10-11 07:59:52,447 [INFO] care-plan-agent:    • eGFR: 85 mL/min/1.73m²
+2025-10-11 07:59:52,447 [INFO] care-plan-agent: 💡 ANALYSIS: Patient data ready for evidence-based recommendation generation
+2025-10-11 07:59:52,447 [INFO] care-plan-agent: ====================================================================================================
+2025-10-11 07:59:52,447 [INFO] care-plan-agent: 
+2025-10-11 07:59:52,450 [INFO] care-plan-agent: ====================================================================================================
+2025-10-11 07:59:52,450 [INFO] care-plan-agent: 🔬 STEP 2: FETCH CLINICAL EVIDENCE & TRIALS
+2025-10-11 07:59:52,450 [INFO] care-plan-agent: ====================================================================================================
+2025-10-11 07:59:52,450 [INFO] care-plan-agent: 📋 REASON: Need evidence-based clinical trial data and research to support
+2025-10-11 07:59:52,450 [INFO] care-plan-agent:            personalized care plan recommendations for this specific patient
+2025-10-11 07:59:52,450 [INFO] care-plan-agent: ----------------------------------------------------------------------------------------------------
+2025-10-11 07:59:52,450 [INFO] care-plan-agent: 🎯 PATIENT CLINICAL PROFILE FOR EVIDENCE MATCHING:
+2025-10-11 07:59:52,450 [INFO] care-plan-agent:    • Patient ID: 12873
+2025-10-11 07:59:52,450 [INFO] care-plan-agent:    • Primary Diagnosis: Type 2 Diabetes Mellitus
+2025-10-11 07:59:52,450 [INFO] care-plan-agent:    • Age: 45 years
+2025-10-11 07:59:52,450 [INFO] care-plan-agent:    • eGFR: 85 mL/min/1.73m²
+2025-10-11 07:59:52,450 [INFO] care-plan-agent:    • Comorbidities: Hypertension
+2025-10-11 07:59:52,450 [INFO] care-plan-agent:    • Geographic Search: 25.0 km radius
+2025-10-11 07:59:52,450 [INFO] care-plan-agent: ----------------------------------------------------------------------------------------------------
+2025-10-11 07:59:52,450 [INFO] care-plan-agent: 🔧 TOOL CHOICE: Calling Evidence Agent Service
+2025-10-11 07:59:52,450 [INFO] care-plan-agent:    WHY EVIDENCE AGENT?: Specialized service that:
+2025-10-11 07:59:52,450 [INFO] care-plan-agent:    1. Retrieves relevant clinical trials via MCP (Trial Registry)
+2025-10-11 07:59:52,450 [INFO] care-plan-agent:    2. Filters trials based on patient's clinical profile
+2025-10-11 07:59:52,451 [INFO] care-plan-agent:    3. Uses LLM to analyze trial eligibility and relevance
+2025-10-11 07:59:52,451 [INFO] care-plan-agent:    4. Returns ranked evidence with suitability scores
+2025-10-11 07:59:52,451 [INFO] care-plan-agent: ----------------------------------------------------------------------------------------------------
+2025-10-11 08:00:00,611 [INFO] care-plan-agent: ✅ STEP 2 COMPLETE: Evidence pack successfully retrieved
+2025-10-11 08:00:00,612 [INFO] care-plan-agent: 📊 EVIDENCE SUMMARY:
+2025-10-11 08:00:00,612 [INFO] care-plan-agent:    • Clinical Trial Analyses: 3
+2025-10-11 08:00:00,612 [INFO] care-plan-agent:    • Matching Trials Found: 3
+2025-10-11 08:00:00,612 [INFO] care-plan-agent:    • Top Matching Trials:
+2025-10-11 08:00:00,612 [INFO] care-plan-agent:      1. GLP-1 RA Renal Outcomes Registry (NCT: NCT07654321)
+2025-10-11 08:00:00,612 [INFO] care-plan-agent:         Distance: 14.9 km | Status: Recruiting
+2025-10-11 08:00:00,612 [INFO] care-plan-agent:      2. SGLT2i Outcomes in CKD Stage 3 (NCT: NCT05566789)
+2025-10-11 08:00:00,612 [INFO] care-plan-agent:         Distance: 12.4 km | Status: Recruiting
+2025-10-11 08:00:00,612 [INFO] care-plan-agent:      3. Novel Diabetes Treatment Study (NCT: NCT12345678)
+2025-10-11 08:00:00,612 [INFO] care-plan-agent:         Distance: 8.5 km | Status: Recruiting
+2025-10-11 08:00:00,612 [INFO] care-plan-agent:    • Evidence Quality Assessment:
+2025-10-11 08:00:00,612 [INFO] care-plan-agent:      1. Trial: GLP-1 RA Renal Outcomes Registry
+2025-10-11 08:00:00,612 [INFO] care-plan-agent:         Grade: medium | Summary: This trial may provide important insights into managing renal outcomes in patien......
+2025-10-11 08:00:00,612 [INFO] care-plan-agent:      2. Trial: SGLT2i Outcomes in CKD Stage 3
+2025-10-11 08:00:00,612 [INFO] care-plan-agent:         Grade: high | Summary: Given the patient profile, this trial is highly relevant and may lead to improve......
+2025-10-11 08:00:00,612 [INFO] care-plan-agent: 💡 ANALYSIS: Evidence data ready for LLM-assisted care plan generation
+2025-10-11 08:00:00,612 [INFO] care-plan-agent: ====================================================================================================
+2025-10-11 08:00:00,612 [INFO] care-plan-agent: 
+2025-10-11 08:00:00,612 [INFO] care-plan-agent: ====================================================================================================
+2025-10-11 08:00:00,612 [INFO] care-plan-agent: 🤖 STEP 3: LLM-ASSISTED CARE PLAN GENERATION
+2025-10-11 08:00:00,612 [INFO] care-plan-agent: ====================================================================================================
+2025-10-11 08:00:00,612 [INFO] care-plan-agent: 📋 REASON: Generate personalized, evidence-based clinical recommendations
+2025-10-11 08:00:00,612 [INFO] care-plan-agent:            using AI to synthesize patient data + clinical evidence
+2025-10-11 08:00:00,612 [INFO] care-plan-agent: ----------------------------------------------------------------------------------------------------
+2025-10-11 08:00:00,612 [INFO] care-plan-agent: 🔧 TOOL CHOICE: Using Large Language Model (LLM)
+2025-10-11 08:00:00,612 [INFO] care-plan-agent:    WHY LLM?: LLMs excel at:
+2025-10-11 08:00:00,612 [INFO] care-plan-agent:    1. Synthesizing complex clinical data (patient + evidence)
+2025-10-11 08:00:00,612 [INFO] care-plan-agent:    2. Generating context-aware, personalized recommendations
+2025-10-11 08:00:00,612 [INFO] care-plan-agent:    3. Providing clinical rationale based on evidence
+2025-10-11 08:00:00,612 [INFO] care-plan-agent:    4. Suggesting appropriate alternatives and safety checks
+2025-10-11 08:00:00,612 [INFO] care-plan-agent:    Model: gpt-4o-mini
+2025-10-11 08:00:00,612 [INFO] care-plan-agent: ----------------------------------------------------------------------------------------------------
+2025-10-11 08:00:00,612 [INFO] care-plan-agent: 📤 INPUT TO LLM:
+2025-10-11 08:00:00,612 [INFO] care-plan-agent:    • Patient Summary: Demographics, diagnoses, medications, labs
+2025-10-11 08:00:00,612 [INFO] care-plan-agent:    • Evidence Pack: 3 trial analyses, 3 matching trials
+2025-10-11 08:00:00,612 [INFO] care-plan-agent:    • Expected Output: Structured JSON with recommendation, rationale, orders, citations
+2025-10-11 08:00:00,612 [INFO] care-plan-agent: ----------------------------------------------------------------------------------------------------
+2025-10-11 08:00:00,613 [INFO] care-plan-agent: 🔄 Simplified input for LLM:
+2025-10-11 08:00:00,613 [INFO] care-plan-agent:    Original size: ~365 + ~2713 chars
+2025-10-11 08:00:00,613 [INFO] care-plan-agent:    Simplified size: ~197 + ~442 chars
+2025-10-11 08:00:00,613 [INFO] care-plan-agent: ⏳ Calling LLM... (this may take 5-15 seconds)
+2025-10-11 08:00:00,613 [INFO] care-plan-agent: Requesting new access token from API Manager endpoint: https://e8f34e4e-e9bb-4799-b725-7173d271fa62-prod.e1-us-east-azure.choreosts.dev/oauth2/token
+2025-10-11 08:00:00,613 [INFO] care-plan-agent: Using client_id: zzbJIM6qUx...
+2025-10-11 08:00:00,777 [INFO] care-plan-agent: Token endpoint responded with status: 200
+2025-10-11 08:00:00,778 [INFO] care-plan-agent: ✓ Access token obtained successfully (expires in 899999 seconds)
+2025-10-11 08:00:00,778 [INFO] care-plan-agent: ✓ Token cached for future requests
+2025-10-11 08:00:00,780 [INFO] care-plan-agent: ================================================================================
+2025-10-11 08:00:00,780 [INFO] care-plan-agent: 🤖 LLM API CALL - Care Plan Generation
+2025-10-11 08:00:00,780 [INFO] care-plan-agent: ================================================================================
+2025-10-11 08:00:00,780 [INFO] care-plan-agent: Endpoint: https://eg-e8f34e4e-e9bb-4799-b725-7173d271fa62-prod.e1-us-east-azure.bijiraapis.dev/lahiru/openai-api/v1.0/chat/completions
+2025-10-11 08:00:00,780 [INFO] care-plan-agent: Model: gpt-4o-mini
+2025-10-11 08:00:00,780 [INFO] care-plan-agent: Messages: 2
+2025-10-11 08:00:00,780 [INFO] care-plan-agent: --------------------------------------------------------------------------------
+2025-10-11 08:00:00,780 [INFO] care-plan-agent: 📤 LLM REQUEST PROMPT:
+2025-10-11 08:00:00,780 [INFO] care-plan-agent: Message 1 [SYSTEM]:
+2025-10-11 08:00:00,780 [INFO] care-plan-agent: You are a clinical decision support assistant. Respond with JSON containing a 'plan_card' key. The plan_card must include: recommendation (string), rationale (string), alternatives (array), safety_checks (array), orders (object with medication and labs), citations (array), trial_matches (array). Be concise.
+2025-10-11 08:00:00,780 [INFO] care-plan-agent: 
+2025-10-11 08:00:00,780 [INFO] care-plan-agent: Message 2 [USER]:
+2025-10-11 08:00:00,781 [INFO] care-plan-agent: {"patient": {"age": 45, "gender": "male", "problems": ["Type 2 Diabetes Mellitus", "Hypertension"], "current_medications": ["Metformin 500mg twice daily", "Lisinopril 10mg once daily"], "a1c": 7.2, "egfr": 85}, "evidence": {"top_trials": [{"title": "GLP-1 RA Renal Outcomes Registry", "grade": null, "summary": "This trial may provide important insights into managing renal outcomes in patients with Type 2 diabetes and moderate kidney function."}, {"title": "SGLT2i Outcomes in CKD Stage 3", "grade"... [truncated, total 666 chars]
+2025-10-11 08:00:00,781 [INFO] care-plan-agent: 
+2025-10-11 08:00:00,781 [INFO] care-plan-agent: --------------------------------------------------------------------------------
+2025-10-11 08:00:00,781 [INFO] care-plan-agent: LLM Gateway request details:
+2025-10-11 08:00:00,781 [INFO] care-plan-agent:   URL: https://eg-e8f34e4e-e9bb-4799-b725-7173d271fa62-prod.e1-us-east-azure.bijiraapis.dev/lahiru/openai-api/v1.0/chat/completions
+2025-10-11 08:00:00,781 [INFO] care-plan-agent:   Headers: {
+  "Authorization": "Bearer <redacted len=1096>",
+  "Content-Type": "application/json"
+}
+2025-10-11 08:00:00,781 [INFO] care-plan-agent:   Payload preview: {"model": "gpt-4o-mini", "messages": [{"role": "system", "content": "You are a clinical decision support assistant. Respond with JSON containing a 'plan_card' key. The plan_card must include: recommendation (string), rationale (string), alternatives (array), safety_checks (array), orders (object with medication and labs), citations (array), trial_matches (array). Be concise."}, {"role": "user", "content": "{\"patient\": {\"age\": 45, \"gender\": \"male\", \"problems\": [\"Type 2 Diabetes Mellitus\", \"Hypertension\"], \"current_medications\": [\"Metformin 500mg twice daily\", \"Lisinopril 10mg once daily\"], \"a1c\": 7.2, \"egfr\": 85}, \"evidence\": {\"top_trials\": [{\"title\": \"GLP-1 RA Renal Outcomes Registry\", \"grade\": null, \"summary\": \"This trial may provide important insights...
+2025-10-11 08:00:00,781 [INFO] care-plan-agent: ⏳ Sending request to LLM API (attempt 1/3)...
+2025-10-11 08:00:06,932 [INFO] care-plan-agent: 📥 LLM API responded with status: 200 (took 6.15s)
+2025-10-11 08:00:06,933 [INFO] care-plan-agent: --------------------------------------------------------------------------------
+2025-10-11 08:00:06,933 [INFO] care-plan-agent: 📥 LLM RESPONSE:
+2025-10-11 08:00:06,933 [INFO] care-plan-agent: {
+  "plan_card": {
+    "recommendation": "Consider adding an SGLT2 inhibitor to the treatment plan to improve glycemic control and renal outcomes.",
+    "rationale": "SGLT2 inhibitors have shown benefits in managing Type 2 Diabetes and protecting renal function, especially in patients with moderate kidney function.",
+    "alternatives": [
+      "Add a GLP-1 receptor agonist",
+      "Optimize current doses of Metformin and Lisinopril",
+      "Consider lifestyle modifications and dietary changes"
+    ],
+    "safety_checks": [
+      "Assess for urinary tract infection risk with SGLT2 inhibitors",
+      "Monitor renal function regularly",
+      "Evaluate potential risk of diabetic ketoacidosis"
+    ],
+    "orders": {
+      "medication": {
+        "SGLT2_inhibitor": "Empagliflozin 10mg once daily"
+      },
+      "labs": {
+        "a1c": "Every 3 months",
+        "egfr": "Every 6 months"
+      }
+    },
+    "citations": [
+      "GLP-1 RA Renal Outcomes Registry",
+      "SGLT2i Outcomes in CKD... [truncated, total 1132 chars]
+2025-10-11 08:00:06,933 [INFO] care-plan-agent: --------------------------------------------------------------------------------
+2025-10-11 08:00:06,933 [INFO] care-plan-agent: 📊 Token Usage:
+2025-10-11 08:00:06,933 [INFO] care-plan-agent:   • Prompt tokens: 255
+2025-10-11 08:00:06,933 [INFO] care-plan-agent:   • Completion tokens: 292
+2025-10-11 08:00:06,933 [INFO] care-plan-agent:   • Total tokens: 547
+2025-10-11 08:00:06,933 [INFO] care-plan-agent: ✓ LLM plan generation completed successfully
+2025-10-11 08:00:06,933 [INFO] care-plan-agent: ================================================================================
+2025-10-11 08:00:06,933 [INFO] care-plan-agent: 
+2025-10-11 08:00:06,935 [INFO] care-plan-agent: ✅ LLM response received and parsed
+2025-10-11 08:00:06,935 [INFO] care-plan-agent:    Parsed keys: ['plan_card']
+2025-10-11 08:00:06,935 [INFO] care-plan-agent: 📊 LLM PLAN CARD COMPONENTS:
+2025-10-11 08:00:06,935 [INFO] care-plan-agent:    • Recommendation: ✓
+2025-10-11 08:00:06,935 [INFO] care-plan-agent:    • Rationale: ✓
+2025-10-11 08:00:06,935 [INFO] care-plan-agent:    • Alternatives: 3 items
+2025-10-11 08:00:06,935 [INFO] care-plan-agent:    • Safety Checks: 3 items
+2025-10-11 08:00:06,935 [INFO] care-plan-agent:    • Medication Orders: ✓
+2025-10-11 08:00:06,935 [INFO] care-plan-agent:    • Lab Orders: 2 items
+2025-10-11 08:00:06,935 [INFO] care-plan-agent:    • Citations: 2 items
+2025-10-11 08:00:06,935 [INFO] care-plan-agent: 💡 ANALYSIS: LLM successfully generated personalized care plan
+2025-10-11 08:00:06,935 [INFO] care-plan-agent: ====================================================================================================
+2025-10-11 08:00:06,935 [INFO] care-plan-agent: 
+2025-10-11 08:00:06,936 [INFO] care-plan-agent: ====================================================================================================
+2025-10-11 08:00:06,936 [INFO] care-plan-agent: 🔨 STEP 4: ASSEMBLE FINAL CARE PLAN
+2025-10-11 08:00:06,936 [INFO] care-plan-agent: ====================================================================================================
+2025-10-11 08:00:06,936 [INFO] care-plan-agent: 📋 REASON: Combine LLM-generated plan with rule-based heuristics
+2025-10-11 08:00:06,936 [INFO] care-plan-agent:            to ensure completeness and clinical validity
+2025-10-11 08:00:06,936 [INFO] care-plan-agent: ----------------------------------------------------------------------------------------------------
+2025-10-11 08:00:06,936 [INFO] care-plan-agent: 🔧 Generating heuristic-based plan card (rule-based fallback)...
+2025-10-11 08:00:06,936 [INFO] care-plan-agent:    ✓ Heuristic plan ready with standard recommendations
+2025-10-11 08:00:06,936 [INFO] care-plan-agent: 🎯 MERGE STRATEGY: Combining LLM + Heuristic
+2025-10-11 08:00:06,936 [INFO] care-plan-agent:    REASON: LLM provides personalized content, heuristic ensures completeness
+2025-10-11 08:00:06,936 [INFO] care-plan-agent:    MERGE LOGIC:
+2025-10-11 08:00:06,936 [INFO] care-plan-agent:    • Use LLM values where available (more context-aware)
+2025-10-11 08:00:06,936 [INFO] care-plan-agent:    • Fall back to heuristic values for missing fields
+2025-10-11 08:00:06,936 [INFO] care-plan-agent:    • Merge trial matches intelligently (by NCT ID or title)
+2025-10-11 08:00:06,936 [INFO] care-plan-agent:    • Preserve all citations and evidence highlights
+2025-10-11 08:00:06,936 [INFO] care-plan-agent: ----------------------------------------------------------------------------------------------------
+2025-10-11 08:00:06,936 [INFO] care-plan-agent: ✅ MERGE COMPLETE: LLM + heuristic plan cards combined
+2025-10-11 08:00:06,936 [INFO] care-plan-agent:    Patient: 12873
+2025-10-11 08:00:06,936 [INFO] care-plan-agent:    Source: LLM-enhanced (AI-generated + rule-based)
+2025-10-11 08:00:06,936 [INFO] care-plan-agent: ----------------------------------------------------------------------------------------------------
+2025-10-11 08:00:06,936 [INFO] care-plan-agent: 📊 FINAL CARE PLAN SUMMARY:
+2025-10-11 08:00:06,936 [INFO] care-plan-agent:    • Primary Recommendation: Consider adding an SGLT2 inhibitor to the treatment plan to improve glycemic con...
+2025-10-11 08:00:06,936 [INFO] care-plan-agent:    • Clinical Rationale: SGLT2 inhibitors have shown benefits in managing Type 2 Diabetes and protecting ...
+2025-10-11 08:00:06,936 [INFO] care-plan-agent:    • Alternative Options: 3
+2025-10-11 08:00:06,936 [INFO] care-plan-agent:    • Safety Considerations: 3
+2025-10-11 08:00:06,936 [INFO] care-plan-agent:    • Medication Orders: empagliflozin
+2025-10-11 08:00:06,936 [INFO] care-plan-agent:    • Lab Orders: 2
+2025-10-11 08:00:06,936 [INFO] care-plan-agent:    • Trial Matches: 2
+2025-10-11 08:00:06,936 [INFO] care-plan-agent:    • Evidence Citations: 2
+2025-10-11 08:00:06,936 [INFO] care-plan-agent: ====================================================================================================
+2025-10-11 08:00:06,936 [INFO] care-plan-agent: ✅ CARE PLAN GENERATION COMPLETE - Ready for delivery
+2025-10-11 08:00:06,936 [INFO] care-plan-agent: ====================================================================================================
+2025-10-11 08:00:06,936 [INFO] care-plan-agent: 
+INFO:     127.0.0.1:59253 - "POST /agents/care-plan/recommendation HTTP/1.1" 200 OK
+2025-10-11 08:00:07,076 [INFO] care-plan-agent: 🔬 Fetching lab history for patient_id=12873 via MCP
+2025-10-11 08:00:07,076 [INFO] care-plan-agent: 📦 Using cached tools list for ehr (3 tools)
+2025-10-11 08:00:07,076 [INFO] care-plan-agent: Using cached MCP access token (valid for 899964 more seconds)
+2025-10-11 08:00:07,076 [INFO] care-plan-agent: ================================================================================
+2025-10-11 08:00:07,076 [INFO] care-plan-agent: MCP REQUEST - Calling tool 'get_patients_by_patient_id_labs' at https://e8f34e4e-e9bb-4799-b725-7173d271fa62-prod.e1-us-east-azure.bijiraapis.dev/lahiru/ehr-mcp-server/v1.0/mcp
+2025-10-11 08:00:07,076 [INFO] care-plan-agent: JSON-RPC Request Payload:
+2025-10-11 08:00:07,076 [INFO] care-plan-agent: {
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "tools/call",
+  "params": {
+    "name": "get_patients_by_patient_id_labs",
+    "arguments": {
+      "patient_id": "12873",
+      "names": "eGFR,A1c",
+      "last_n": 6
+    }
+  }
+}
+2025-10-11 08:00:07,076 [INFO] care-plan-agent: Request Headers: {
+  "Authorization": "Bearer eyJ4NXQjUzI1NiI6Ik1t...iFBuk299SA",
+  "Content-Type": "application/json"
+}
+2025-10-11 08:00:07,076 [INFO] care-plan-agent: --------------------------------------------------------------------------------
+2025-10-11 08:00:07,457 [INFO] care-plan-agent: MCP RESPONSE - Status Code: 200
+2025-10-11 08:00:07,457 [INFO] care-plan-agent: Response Headers: {
+  "Date": "Sat, 11 Oct 2025 13:00:07 GMT",
+  "Content-Type": "application/json",
+  "Content-Length": "1140",
+  "Connection": "keep-alive",
+  "x-ratelimit-limit": "1000, 1000;w=60",
+  "x-ratelimit-remaining": "999",
+  "x-ratelimit-reset": "53"
+}
+2025-10-11 08:00:07,457 [INFO] care-plan-agent: JSON-RPC Response:
+2025-10-11 08:00:07,457 [INFO] care-plan-agent: {
+  "jsonrpc": "2.0",
+  "id": 1,
+  "result": {
+    "isError": false,
+    "content": [
+      {
+        "type": "text",
+        "text": "{\"labs\":[{\"labId\":\"L001\",\"name\":\"A1c\",\"recordDate\":\"2024-01-10\",\"referenceRange\":\"<7.0\",\"status\":\"abnormal\",\"unit\":\"%\",\"value\":7.2},{\"labId\":\"L002\",\"name\":\"eGFR\",\"recordDate\":\"2024-01-10\",\"referenceRange\":\">60\",\"status\":\"normal\",\"unit\":\"mL/min/1.73m\u00b2\",\"value\":85},{\"labId\":\"L003\",\"name\":\"A1c\",\"recordDate\":\"2023-10-10\",\"referenceRange\":\"<7.0\",\"status\":\"normal\",\"unit\":\"%\",\"value\":6.8},{\"labId\":\"L004\",\"name\":\"eGFR\",\"recordDate\":\"2023-10-10\",\"referenceRange\":\">60\",\"status\":\"normal\",\"unit\":\"mL/min/1.73m\u00b2\",\"value\":88},{\"labId\":\"L005\",\"name\":\"A1c\",\"recordDate\":\"2023-07-15\",\"referenceRange\":\"<7.0\",\"status\":\"normal\",\"unit\":\"%\",\"value\":7},{\"labId\":\"L006\",\"name\":\"eGFR\",\"recordDate\":\"2023-07-15\",\"referenceRange\":\">60\",\"status\":\"normal\",\"unit\":\"mL/min/1.73m\u00b2\",\"value\":82}],\"patientId\":\"12873\"}"
+      }
+    ]
+  }
+}
+2025-10-11 08:00:07,457 [INFO] care-plan-agent: ================================================================================
+2025-10-11 08:00:07,457 [INFO] care-plan-agent: ✓ MCP tool 'get_patients_by_patient_id_labs' executed successfully
+2025-10-11 08:00:07,459 [INFO] care-plan-agent: ✓ Retrieved 6 lab results for patient_id=12873
+INFO:     127.0.0.1:59253 - "GET /patients/12873/labs?names=eGFR%2CA1c&last_n=6 HTTP/1.1" 200 OK

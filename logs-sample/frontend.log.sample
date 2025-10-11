@@ -1,0 +1,15 @@
+
+> care-plan-portal@0.1.0 dev
+> next dev -p 8080
+
+  ▲ Next.js 14.2.5
+  - Local:        http://localhost:8080
+
+ ✓ Starting...
+ ✓ Ready in 1277ms
+ ✓ Compiled / in 429ms (444 modules)
+ GET / 200 in 537ms
+ ✓ Compiled /api/care-plan in 81ms (252 modules)
+ POST /api/care-plan 200 in 34747ms
+ ✓ Compiled /api/labs in 80ms (254 modules)
+ GET /api/labs?patientId=12873&names=eGFR,A1c&last_n=6 200 in 505ms
