@@ -10,6 +10,7 @@ import json
 import logging
 import os
 import re
+import time
 from datetime import datetime
 from typing import Any, Dict, List, Optional, TypedDict
 
@@ -61,6 +62,10 @@ API_MANAGER_CHAT_ENDPOINT = _strip_quotes(
         f"{API_MANAGER_OPENAI_PROXY_URL}/chat/completions" if API_MANAGER_OPENAI_PROXY_URL else None
     )
 ) or None
+
+LLM_MAX_ATTEMPTS = max(1, int(os.environ.get("LLM_MAX_ATTEMPTS", 3)))
+LLM_RETRY_BACKOFF_SECONDS = max(0.0, float(os.environ.get("LLM_RETRY_BACKOFF_SECONDS", 2.0)))
+LLM_RETRYABLE_STATUSES = {429, 500, 502, 503, 504}
 
 # MCP Gateway configuration
 MCP_GATEWAY_CLIENT_ID = _strip_quotes(os.environ.get("MCP_GATEWAY_CLIENT_ID"))
@@ -563,53 +568,101 @@ def _call_llm(messages: List[dict[str, str]]) -> Optional[str]:
     }
     _log_llm_gateway_request(API_MANAGER_CHAT_ENDPOINT, request_headers, payload)
 
-    try:
-        logger.info("⏳ Sending request to LLM API...")
-        start_time = __import__('time').time()
-        response = requests.post(
-            API_MANAGER_CHAT_ENDPOINT,
-            headers=request_headers,
-            json=payload,
-            timeout=180,
-        )
-        elapsed = __import__('time').time() - start_time
-        
-        logger.info("📥 LLM API responded with status: %d (took %.2fs)", response.status_code, elapsed)
-        
-        response.raise_for_status()
-        data = response.json()
-        content = data["choices"][0]["message"]["content"]
-        
-        logger.info("-" * 80)
-        logger.info("📥 LLM RESPONSE:")
-        # Truncate very long responses for readability
-        if len(content) > 1000:
-            logger.info("%s... [truncated, total %d chars]", content[:1000], len(content))
-        else:
-            logger.info("%s", content)
-        logger.info("-" * 80)
-        
-        # Log token usage if available
-        if "usage" in data:
-            usage = data["usage"]
-            logger.info("📊 Token Usage:")
-            logger.info("  • Prompt tokens: %d", usage.get("prompt_tokens", 0))
-            logger.info("  • Completion tokens: %d", usage.get("completion_tokens", 0))
-            logger.info("  • Total tokens: %d", usage.get("total_tokens", 0))
-        
-        logger.info("✓ Trial grading completed successfully")
-        logger.info("=" * 80)
-        logger.info("")
-        return content
-    except requests.HTTPError as exc:
-        logger.error("✗ LLM API HTTP error: status=%d, response=%s", 
-                    response.status_code, 
-                    response.text[:200] if response.text else "empty")
-        logger.exception("✗ LLM evidence grading failed: %s", exc)
-        return None
-    except (requests.RequestException, KeyError, IndexError, ValueError) as exc:
-        logger.exception("✗ LLM evidence grading failed: %s", exc)
-        return None
+    backoff = LLM_RETRY_BACKOFF_SECONDS or 0.0
+
+    for attempt in range(1, LLM_MAX_ATTEMPTS + 1):
+        try:
+            logger.info("⏳ Sending request to LLM API (attempt %d/%d)...", attempt, LLM_MAX_ATTEMPTS)
+            start_time = time.time()
+            response = requests.post(
+                API_MANAGER_CHAT_ENDPOINT,
+                headers=request_headers,
+                json=payload,
+                timeout=180,
+            )
+            elapsed = time.time() - start_time
+
+            logger.info("📥 LLM API responded with status: %d (took %.2fs)", response.status_code, elapsed)
+
+            response.raise_for_status()
+            data = response.json()
+            content = data["choices"][0]["message"]["content"]
+
+            logger.info("-" * 80)
+            logger.info("📥 LLM RESPONSE:")
+            # Truncate very long responses for readability
+            if len(content) > 1000:
+                logger.info("%s... [truncated, total %d chars]", content[:1000], len(content))
+            else:
+                logger.info("%s", content)
+            logger.info("-" * 80)
+
+            # Log token usage if available
+            if "usage" in data:
+                usage = data["usage"]
+                logger.info("📊 Token Usage:")
+                logger.info("  • Prompt tokens: %d", usage.get("prompt_tokens", 0))
+                logger.info("  • Completion tokens: %d", usage.get("completion_tokens", 0))
+                logger.info("  • Total tokens: %d", usage.get("total_tokens", 0))
+
+            logger.info("✓ Trial grading completed successfully")
+            logger.info("=" * 80)
+            logger.info("")
+            return content
+        except requests.Timeout as exc:
+            logger.error("✗ LLM API request timed out on attempt %d/%d", attempt, LLM_MAX_ATTEMPTS)
+            if attempt == LLM_MAX_ATTEMPTS:
+                logger.exception("✗ LLM evidence grading failed after retries: %s", exc)
+                return None
+            delay = backoff
+            if delay:
+                logger.info("↻ Retrying LLM call in %.1fs after timeout", delay)
+                time.sleep(delay)
+                backoff = delay * 2
+            continue
+        except requests.HTTPError as exc:
+            status = exc.response.status_code if exc.response is not None else getattr(response, "status_code", None)
+            body_preview = ""
+            if exc.response is not None and exc.response.text:
+                body_preview = exc.response.text[:200]
+            elif response.text:
+                body_preview = response.text[:200]
+
+            logger.error(
+                "✗ LLM API HTTP error on attempt %d/%d: status=%s, response=%s",
+                attempt,
+                LLM_MAX_ATTEMPTS,
+                status,
+                body_preview or "empty",
+            )
+
+            retryable = status in LLM_RETRYABLE_STATUSES if status is not None else False
+            if retryable and attempt < LLM_MAX_ATTEMPTS:
+                delay = backoff
+                if delay:
+                    logger.info("↻ Retrying LLM call in %.1fs (HTTP %s)", delay, status)
+                    time.sleep(delay)
+                    backoff = delay * 2
+                continue
+
+            logger.exception("✗ LLM evidence grading failed: %s", exc)
+            return None
+        except requests.RequestException as exc:
+            logger.error("✗ LLM request error on attempt %d/%d: %s", attempt, LLM_MAX_ATTEMPTS, exc)
+            if attempt < LLM_MAX_ATTEMPTS:
+                delay = backoff
+                if delay:
+                    logger.info("↻ Retrying LLM call in %.1fs after request error", delay)
+                    time.sleep(delay)
+                    backoff = delay * 2
+                continue
+            logger.exception("✗ LLM evidence grading failed after retries: %s", exc)
+            return None
+        except (KeyError, IndexError, ValueError) as exc:
+            logger.exception("✗ LLM evidence grading failed while parsing response: %s", exc)
+            return None
+
+    return None
 
 
 def _extract_json_block(text: str) -> Optional[dict[str, Any]]:
